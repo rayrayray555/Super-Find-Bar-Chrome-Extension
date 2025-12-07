@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Super Find Bar - 设置</title>
+    <link rel="stylesheet" href="options.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <div class="header-left">
+                <h1>🔍 Super Find Bar</h1>
+                <p class="version">v1.0.0</p>
+            </div>
+            <div class="header-right">
+                <select id="lang-selector">
+                    <option value="zh">中文</option>
+                    <option value="en">English</option>
+                </select>
+            </div>
+        </header>
+
+        <!-- 默认搜索设置 -->
+        <section class="settings-section">
+            <h2 data-i18n="defaultSearchSettings">默认搜索设置</h2>
+            <p class="section-desc" data-i18n="defaultSearchSettingsDesc">以下设置将作为搜索框打开时的默认值</p>
+            
+            <div class="options-grid">
+                <label class="option-item">
+                    <input type="checkbox" id="opt-matchCase">
+                    <span data-i18n="matchCase">区分大小写</span>
+                </label>
+                <label class="option-item">
+                    <input type="checkbox" id="opt-wholeWord">
+                    <span data-i18n="wholeWord">全词匹配</span>
+                </label>
+                <label class="option-item">
+                    <input type="checkbox" id="opt-highlightAll">
+                    <span data-i18n="highlightAll">高亮所有</span>
+                </label>
+                <label class="option-item">
+                    <input type="checkbox" id="opt-ignoreAccents">
+                    <span data-i18n="ignoreAccents">忽略重音</span>
+                </label>
+                <label class="option-item">
+                    <input type="checkbox" id="opt-regex">
+                    <span data-i18n="regex">正则表达式</span>
+                </label>
+                <label class="option-item">
+                    <input type="checkbox" id="opt-includeHidden">
+                    <span data-i18n="includeHidden">包含隐藏元素</span>
+                </label>
+                <label class="option-item">
+                    <input type="checkbox" id="opt-fuzzy">
+                    <span data-i18n="fuzzy">模糊搜索</span>
+                </label>
+            </div>
+
+            <div class="setting-row">
+                <label data-i18n="fuzzyTolerance">模糊搜索容错</label>
+                <div class="control-group">
+                    <input type="range" id="fuzzy-tolerance" min="0" max="5" step="1" value="1">
+                    <span id="fuzzy-tolerance-value">1</span>
+                </div>
+            </div>
+
+            <div class="setting-row">
+                <label data-i18n="perfThreshold">自动搜索阈值（节点数）</label>
+                <div class="control-group">
+                    <input type="number" id="perf-threshold" min="1000" max="50000" step="1000" value="5000">
+                    <button id="reset-perf" class="btn-secondary" data-i18n="reset">重置</button>
+                </div>
+            </div>
+            <p class="hint" data-i18n="perfThresholdHint">超过此数值将关闭实时搜索，需要手动按 Enter 触发</p>
+        </section>
+
+        <!-- 快捷键设置 -->
+        <section class="settings-section">
+            <h2 data-i18n="shortcutSettings">快捷键设置</h2>
+            
+            <div class="shortcut-box">
+                <div class="shortcut-item">
+                    <strong data-i18n="defaultShortcut">默认快捷键</strong>
+                    <code>Ctrl+Shift+F</code> (Mac: <code>Cmd+Shift+F</code>)
+                </div>
+                
+                <p class="hint" data-i18n="customShortcutDesc">💡 如果默认快捷键与其他程序冲突，可以在 Chrome 扩展快捷键设置中自定义</p>
+                
+                <p class="hint warning" style="margin-top: 8px;">
+                    ⚠️ <strong>输入法冲突提示：</strong>如果 <code>Ctrl+Shift+F</code> 触发微软输入法简繁切换，您可以：<br>
+                    &nbsp;&nbsp;&nbsp;&nbsp;1. 在系统"语言设置 → 微软拼音 → 按键"中关闭简繁切换快捷键<br>
+                    &nbsp;&nbsp;&nbsp;&nbsp;2. 或点击下方按钮，在 Chrome 中自定义扩展快捷键
+                </p>
+                
+                <button id="open-chrome-shortcuts" class="btn-primary" data-i18n="openChromeShortcuts">
+                    ⚙️ 打开 Chrome 快捷键设置
+                </button>
+                
+                <p class="hint warning" data-i18n="shortcutLimitation" style="margin-top: 12px;">
+                    ⚠️ 注意：快捷键在 Chrome 系统页面（如扩展商店、设置页面）无法生效
+                </p>
+            </div>
+        </section>
+
+        <!-- 外观与布局 -->
+        <section class="settings-section">
+            <h2 data-i18n="appearanceLayout">外观与布局</h2>
+            
+            <div class="setting-row">
+                <label data-i18n="windowPosition">窗口位置</label>
+                <div class="position-selector">
+                    <div class="position-grid">
+                        <button class="position-btn" data-position="top-left" title="左上角"></button>
+                        <button class="position-btn" data-position="top-right" title="右上角"></button>
+                        <button class="position-btn" data-position="top" title="顶部横条">TOP</button>
+                        <button class="position-btn" data-position="bottom-left" title="左下角"></button>
+                        <button class="position-btn" data-position="bottom-right" title="右下角"></button>
+                        <button class="position-btn" data-position="bottom" title="底部横条">BOT</button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="setting-row">
+                <label data-i18n="colorScheme">多词颜色方案</label>
+                <div class="color-picker-group">
+                    <div class="color-picker" data-index="0"><input type="color" value="#fce8b2"><span>1</span></div>
+                    <div class="color-picker" data-index="1"><input type="color" value="#ccff90"><span>2</span></div>
+                    <div class="color-picker" data-index="2"><input type="color" value="#8ab4f8"><span>3</span></div>
+                    <div class="color-picker" data-index="3"><input type="color" value="#e6c9a8"><span>4</span></div>
+                    <div class="color-picker" data-index="4"><input type="color" value="#d7aefb"><span>5</span></div>
+                    <div class="color-picker" data-index="5"><input type="color" value="#fdcfe8"><span>6</span></div>
+                    <div class="color-picker" data-index="6"><input type="color" value="#a7ffeb"><span>7</span></div>
+                    <button id="reset-colors" class="color-picker reset-btn" title="重置颜色">🔄</button>
+                </div>
+            </div>
+
+            <div class="setting-row">
+                <label data-i18n="themeColors">主题颜色</label>
+                <div class="theme-colors">
+                    <div class="color-input-group">
+                        <span data-i18n="background">背景</span>
+                        <input type="color" id="theme-bg" value="#202124">
+                    </div>
+                    <div class="color-input-group">
+                        <span data-i18n="text">文字</span>
+                        <input type="color" id="theme-text" value="#e8eaed">
+                    </div>
+                </div>
+            </div>
+
+            <div class="setting-row">
+                <label data-i18n="backgroundOpacity">背景透明度</label>
+                <div class="control-group">
+                    <input type="range" id="theme-opacity" min="0.5" max="1" step="0.05" value="0.95">
+                    <span id="theme-opacity-value">95%</span>
+                </div>
+            </div>
+
+            <label class="option-item">
+                <input type="checkbox" id="show-launch-btn">
+                <span data-i18n="showLaunchBtn">显示右下角放大镜按钮</span>
+            </label>
+
+            <label class="option-item">
+                <input type="checkbox" id="persistent">
+                <span data-i18n="persistent">刷新后自动显示搜索栏</span>
+            </label>
+        </section>
+
+        <!-- 社交互动区域 -->
+        <section class="support-section">
+            <h2>💙 <span data-i18n="supportProject">支持这个项目</span></h2>
+            <p data-i18n="supportDesc">如果这个扩展帮到了您，请考虑：</p>
+            
+            <div class="action-buttons">
+                <a href="https://github.com/rayrayray555/Super-Find-Bar-Chrome-Extension" target="_blank" class="btn btn-primary">
+                    ⭐ <span data-i18n="githubStar">GitHub Star</span>
+                </a>
+                <a href="https://chrome.google.com/webstore/detail/YOUR_EXTENSION_ID/reviews" target="_blank" class="btn btn-primary">
+                    ⭐ <span data-i18n="rateExtension">五星好评</span>
+                </a>
+            </div>
+            
+            <div class="help-links" style="margin-top: 16px;">
+                <a href="https://github.com/rayrayray555/Super-Find-Bar-Chrome-Extension?tab=readme-ov-file#-%E4%BD%BF%E7%94%A8%E6%96%B9%E6%B3%95" target="_blank">📖 <span data-i18n="tutorial">使用教程</span></a>
+                <a href="https://github.com/rayrayray555/Super-Find-Bar-Chrome-Extension/issues" target="_blank">🐛 <span data-i18n="reportIssue">报告问题</span></a>
+                <a href="https://github.com/rayrayray555/Super-Find-Bar-Chrome-Extension?tab=readme-ov-file#-%E9%9A%90%E7%A7%81%E6%94%BF%E7%AD%96" target="_blank">🔒 <span data-i18n="privacyPolicy">隐私政策</span></a>
+            </div>
+        </section>
+
+        <footer>
+            <p>
+                🔓 <span data-i18n="openSource">100% 开源</span> | 
+                <a href="https://github.com/rayrayray555/Super-Find-Bar-Chrome-Extension/blob/main/LICENSE" target="_blank">MIT License</a>
+            </p>
+            <p class="save-status" id="save-status"></p>
+        </footer>
+    </div>
+
+    <script src="options.js"></script>
+</body>
+</html>
+
+
+

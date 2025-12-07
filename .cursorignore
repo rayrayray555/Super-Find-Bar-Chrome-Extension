@@ -1,0 +1,28 @@
+# 1. 编译输出和分发文件 (这些是 AI 不应该读取的最终结果)
+dist/
+build/
+out/
+temp/
+
+# 2. 依赖管理文件夹 (Token 杀手，尤其是 Node.js 项目)
+node_modules/
+
+# 3. 版本控制和系统文件
+.git/
+.DS_Store
+Thumbs.db
+
+# 4. 源码地图和日志
+*.map
+*.log
+npm-debug.log*
+
+# 5. 标准文档 (按您的要求屏蔽)
+LICENSE*
+
+# 6. 配置文件和缓存 (如果这些文件中不包含你需要 AI 修改的逻辑)
+.env
+.eslintcache
+.babelrc
+.gitignore
+.editorconfig

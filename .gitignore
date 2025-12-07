@@ -1,0 +1,47 @@
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Node.js (如果未来需要构建工具)
+node_modules/
+npm-debug.log
+yarn-error.log
+package-lock.json
+yarn.lock
+
+# 临时文件
+*.log
+*.tmp
+*.bak
+*.backup
+
+# 打包文件
+*.zip
+*.crx
+*.pem
+
+# 测试和备份
+test/
+backup/
+archive/
+*.old
+
+# 环境变量
+.env
+.env.local
+
