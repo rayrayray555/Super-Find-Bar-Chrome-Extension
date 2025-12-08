@@ -85,6 +85,28 @@ h1 {
     outline: none;
 }
 
+.theme-toggle-btn {
+    width: 36px;
+    height: 36px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--card-bg);
+    color: var(--text);
+    cursor: pointer;
+    font-size: 18px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s;
+    outline: none;
+}
+
+.theme-toggle-btn:hover {
+    background: var(--surface);
+    border-color: var(--primary);
+    transform: scale(1.05);
+}
+
 /* Sections */
 .settings-section {
     margin-bottom: 48px;
@@ -136,6 +158,19 @@ h1 {
 .setting-control {
     display: flex;
     align-items: center;
+}
+
+/* 搜索选项行样式 */
+.search-option-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 4px 0;
+}
+
+.search-option-row .setting-label {
+    font-size: 14px;
+    font-weight: 400;
 }
 
 /* Bottom Description Box */
@@ -346,6 +381,7 @@ input[type="number"]:focus {
     display: flex;
     align-items: center;
     gap: 12px;
+    flex-wrap: wrap;
 }
 
 .key-badge {
@@ -356,6 +392,18 @@ input[type="number"]:focus {
     font-family: monospace;
     font-weight: 600;
     font-size: 14px;
+}
+
+/* 快捷键按钮样式 */
+#open-chrome-shortcuts {
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+#open-chrome-shortcuts:hover {
+    background: var(--primary-hover);
+    transform: translateY(-1px);
+    box-shadow: 0 2px 6px rgba(138, 180, 248, 0.3);
 }
 
 /* Support Section */

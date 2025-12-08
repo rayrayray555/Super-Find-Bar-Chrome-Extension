@@ -29,6 +29,12 @@ const DEFAULT_CONFIG = {
     scroll: {
         alwaysCenter: true
     },
+    coordinates: {
+        showXAxis: false,
+        showYAxis: true,
+        xPosition: 'bottom',
+        yPosition: 'right'
+    },
     colors: [
         '#fce8b2', '#ccff90', '#8ab4f8', '#e6c9a8',
         '#d7aefb', '#fdcfe8', '#a7ffeb'
@@ -56,6 +62,14 @@ const I18N = {
         alwaysCenter: '始终居中',
         onlyWhenHidden: '仅不可见时滚动',
         scrollBehaviorHint: '始终居中：避免被浮动元素遮挡，适合 ChatGPT 等网站 | 仅不可见时滚动：减少跳动，适合长文档阅读',
+        axisPosition: '坐标轴位置',
+        xAxisPosition: 'X 轴位置',
+        yAxisPosition: 'Y 轴位置',
+        axisTop: '顶部',
+        axisBottom: '底部',
+        axisLeft: '左侧',
+        axisRight: '右侧',
+        showInToolbar: '显示在工具栏',
         showLaunchBtn: '显示右下角放大镜按钮',
         persistent: '刷新后自动显示搜索栏',
         appearanceLayout: '外观与布局',
@@ -75,7 +89,14 @@ const I18N = {
         imeConflictWarning: '输入法冲突提示',
         imeConflictHint: '如果 Ctrl+Shift+F 触发微软输入法简繁切换，请在系统输入法设置中关闭该快捷键。',
         shortcutNotWorking: '快捷键在扩展商店等系统页面不生效',
-        customShortcut: '自定义快捷键'
+        customShortcut: '自定义快捷键',
+        searchOptions: '搜索选项设置',
+        defaultChecked: '默认勾选',
+        axisPositionHint: '当搜索栏位于底部(BOT)时，X轴会自动调整到顶部，避免遮挡',
+        toggleTheme: '切换主题',
+        reset: '重置',
+        background: '背景',
+        textColor: '文字'
     },
     en: {
         defaultSearchSettings: 'Default Search Settings',
@@ -93,6 +114,14 @@ const I18N = {
         alwaysCenter: 'Always Center',
         onlyWhenHidden: 'Scroll Only When Hidden',
         scrollBehaviorHint: 'Always Center: Avoids obstruction by floating elements | Only When Hidden: Reduces jumps, stable reading',
+        axisPosition: 'Axis Position',
+        xAxisPosition: 'X-Axis Position',
+        yAxisPosition: 'Y-Axis Position',
+        axisTop: 'Top',
+        axisBottom: 'Bottom',
+        axisLeft: 'Left',
+        axisRight: 'Right',
+        showInToolbar: 'Show in Toolbar',
         showLaunchBtn: 'Show Launch Button',
         persistent: 'Auto-show on Refresh',
         appearanceLayout: 'Appearance & Layout',
@@ -112,7 +141,14 @@ const I18N = {
         imeConflictWarning: 'IME Conflict Warning',
         imeConflictHint: 'If Ctrl+Shift+F triggers Microsoft IME simplified/traditional toggle, please disable this shortcut in system IME settings.',
         shortcutNotWorking: 'Shortcut does not work on extension store and other system pages',
-        customShortcut: 'Customize Shortcut'
+        customShortcut: 'Customize Shortcut',
+        searchOptions: 'Search Options',
+        defaultChecked: 'Default Checked',
+        axisPositionHint: 'When search bar is at bottom (BOT), X-axis will automatically move to top to avoid overlap',
+        toggleTheme: 'Toggle Theme',
+        reset: 'Reset',
+        background: 'Background',
+        textColor: 'Text Color'
     }
 };
 
@@ -128,11 +164,13 @@ async function loadConfig() {
                 layout: { ...DEFAULT_CONFIG.layout, ...result[STORAGE_KEY].layout },
                 search: { ...DEFAULT_CONFIG.search, ...result[STORAGE_KEY].search },
                 scroll: { ...DEFAULT_CONFIG.scroll, ...result[STORAGE_KEY].scroll },
+                coordinates: { ...DEFAULT_CONFIG.coordinates, ...result[STORAGE_KEY].coordinates },
                 colors: result[STORAGE_KEY].colors || DEFAULT_CONFIG.colors
             };
         }
         if (!CONFIG.lang) CONFIG.lang = 'zh';
         if (!CONFIG.scroll) CONFIG.scroll = DEFAULT_CONFIG.scroll;
+        if (!CONFIG.coordinates) CONFIG.coordinates = DEFAULT_CONFIG.coordinates;
         
         updateUI();
         updateLanguage(CONFIG.lang);
@@ -181,6 +219,36 @@ function updateUI() {
     const scrollValue = CONFIG.scroll.alwaysCenter ? 'always-center' : 'only-when-hidden';
     const scrollRadio = document.querySelector(`input[name="scroll-behavior"][value="${scrollValue}"]`);
     if (scrollRadio) scrollRadio.checked = true;
+
+    // 坐标轴位置
+    const xAxisValue = CONFIG.coordinates.xPosition || 'bottom';
+    const xAxisRadio = document.querySelector(`input[name="x-axis-position"][value="${xAxisValue}"]`);
+    if (xAxisRadio) xAxisRadio.checked = true;
+    
+    const yAxisValue = CONFIG.coordinates.yPosition || 'right';
+    const yAxisRadio = document.querySelector(`input[name="y-axis-position"][value="${yAxisValue}"]`);
+    if (yAxisRadio) yAxisRadio.checked = true;
+
+    // 工具栏显示控制
+    searchOptions.forEach(opt => {
+        const toolbarSwitch = document.getElementById(`toolbar-${opt}`);
+        const defaultSwitch = document.getElementById(`opt-${opt}`);
+        
+        if (toolbarSwitch) {
+            toolbarSwitch.checked = CONFIG.search.pinned.includes(opt);
+        }
+        
+        // 如果不在工具栏中，禁用"默认勾选"开关
+        if (defaultSwitch) {
+            if (CONFIG.search.pinned.includes(opt)) {
+                defaultSwitch.disabled = false;
+                defaultSwitch.checked = CONFIG.search[opt];
+            } else {
+                defaultSwitch.disabled = true;
+                defaultSwitch.checked = false;
+            }
+        }
+    });
 
     // 其他开关
     document.getElementById('show-launch-btn').checked = CONFIG.layout.showLaunchBtn;
@@ -242,6 +310,13 @@ function updateLanguage(lang) {
             el.textContent = I18N[lang][key];
         }
     });
+    // 更新所有 data-i18n-title 属性
+    document.querySelectorAll('[data-i18n-title]').forEach(el => {
+        const key = el.dataset.i18nTitle;
+        if (I18N[lang] && I18N[lang][key]) {
+            el.title = I18N[lang][key];
+        }
+    });
 }
 
 // 初始化事件监听
@@ -284,6 +359,60 @@ function initEventListeners() {
             CONFIG.scroll.alwaysCenter = e.target.value === 'always-center';
             saveConfig();
         });
+    });
+
+    // 坐标轴位置
+    document.querySelectorAll('input[name="x-axis-position"]').forEach(radio => {
+        radio.addEventListener('change', (e) => {
+            CONFIG.coordinates.xPosition = e.target.value;
+            saveConfig();
+        });
+    });
+    
+    document.querySelectorAll('input[name="y-axis-position"]').forEach(radio => {
+        radio.addEventListener('change', (e) => {
+            CONFIG.coordinates.yPosition = e.target.value;
+            saveConfig();
+        });
+    });
+
+    // 工具栏显示控制
+    searchOptions.forEach(opt => {
+        const toolbarSwitch = document.getElementById(`toolbar-${opt}`);
+        const defaultSwitch = document.getElementById(`opt-${opt}`);
+        
+        if (toolbarSwitch) {
+            toolbarSwitch.addEventListener('change', (e) => {
+                if (e.target.checked) {
+                    // 添加到工具栏
+                    if (!CONFIG.search.pinned.includes(opt)) {
+                        CONFIG.search.pinned.push(opt);
+                    }
+                    // 启用"默认勾选"开关
+                    if (defaultSwitch) {
+                        defaultSwitch.disabled = false;
+                    }
+                } else {
+                    // 从工具栏移除
+                    CONFIG.search.pinned = CONFIG.search.pinned.filter(k => k !== opt);
+                    // 清除勾选状态
+                    CONFIG.search[opt] = false;
+                    // 禁用"默认勾选"开关
+                    if (defaultSwitch) {
+                        defaultSwitch.disabled = true;
+                        defaultSwitch.checked = false;
+                    }
+                }
+                saveConfig();
+            });
+        }
+        
+        // 初始化时，如果不在工具栏中，禁用"默认勾选"开关
+        if (defaultSwitch && toolbarSwitch) {
+            if (!CONFIG.search.pinned.includes(opt)) {
+                defaultSwitch.disabled = true;
+            }
+        }
     });
 
     // 显示按钮 & 持久化
@@ -348,6 +477,73 @@ function initEventListeners() {
         updateLanguage(e.target.value);
         saveConfig();
     });
+
+    // 主题切换
+    const themeToggle = document.getElementById('theme-toggle');
+    const themeIcon = document.getElementById('theme-icon');
+    
+    // 检测系统主题
+    function getSystemTheme() {
+        return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+    }
+    
+    // 应用主题
+    function applyTheme(theme) {
+        const root = document.documentElement;
+        let actualTheme = theme === 'auto' ? getSystemTheme() : theme;
+        
+        if (actualTheme === 'dark') {
+            root.style.setProperty('--bg', '#1e1e1e');
+            root.style.setProperty('--surface', '#252525');
+            root.style.setProperty('--card-bg', '#2d2d2d');
+            root.style.setProperty('--border', '#404040');
+            root.style.setProperty('--text', '#e8eaed');
+            root.style.setProperty('--text-secondary', '#9aa0a6');
+            themeIcon.textContent = '🌙';
+        } else {
+            root.style.setProperty('--bg', '#ffffff');
+            root.style.setProperty('--surface', '#f8f9fa');
+            root.style.setProperty('--card-bg', '#ffffff');
+            root.style.setProperty('--border', '#dadce0');
+            root.style.setProperty('--text', '#202124');
+            root.style.setProperty('--text-secondary', '#5f6368');
+            themeIcon.textContent = '☀️';
+        }
+        
+        if (theme === 'auto') {
+            themeIcon.textContent = '🌓';
+        }
+        
+        localStorage.setItem('sf-options-theme', theme);
+    }
+    
+    // 初始化主题
+    function initTheme() {
+        const savedTheme = localStorage.getItem('sf-options-theme') || 'auto';
+        applyTheme(savedTheme);
+    }
+    
+    // 切换主题
+    if (themeToggle) {
+        themeToggle.addEventListener('click', () => {
+            const currentTheme = localStorage.getItem('sf-options-theme') || 'auto';
+            let nextTheme;
+            if (currentTheme === 'auto') nextTheme = 'light';
+            else if (currentTheme === 'light') nextTheme = 'dark';
+            else nextTheme = 'auto';
+            applyTheme(nextTheme);
+        });
+        
+        // 监听系统主题变化
+        window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
+            const currentTheme = localStorage.getItem('sf-options-theme') || 'auto';
+            if (currentTheme === 'auto') {
+                applyTheme('auto');
+            }
+        });
+        
+        initTheme();
+    }
 }
 
 document.addEventListener('DOMContentLoaded', () => {

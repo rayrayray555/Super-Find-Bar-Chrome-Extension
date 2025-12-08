@@ -76,6 +76,22 @@
             if (!CONFIG.lang) CONFIG.lang = 'zh';
             if (!CONFIG.coordinates) CONFIG.coordinates = DEFAULT_CONFIG.coordinates;
             if (!CONFIG.scroll) CONFIG.scroll = DEFAULT_CONFIG.scroll;
+            
+            // 从 sessionStorage 加载临时设置（会话级，浏览器关闭后清除）
+            // 优先级：sessionStorage > storage.sync（默认值）
+            try {
+                const sessionPinned = sessionStorage.getItem('sf-session-pinned');
+                if (sessionPinned) {
+                    CONFIG.search.pinned = JSON.parse(sessionPinned);
+                }
+                
+                const sessionCoordinates = sessionStorage.getItem('sf-session-coordinates');
+                if (sessionCoordinates) {
+                    CONFIG.coordinates = { ...CONFIG.coordinates, ...JSON.parse(sessionCoordinates) };
+                }
+            } catch (e) {
+                console.error('[Super Find Bar] Failed to load session config:', e);
+            }
         } catch (e) {
             console.error('[Super Find Bar] Failed to load config:', e);
         }
@@ -86,6 +102,16 @@
             await chrome.storage.sync.set({ [STORAGE_KEY]: CONFIG });
         } catch (e) {
             console.error('[Super Find Bar] Failed to save config:', e);
+        }
+    }
+    
+    // 保存会话级临时配置（不持久化，浏览器关闭后清除）
+    function saveSessionConfig() {
+        try {
+            sessionStorage.setItem('sf-session-pinned', JSON.stringify(CONFIG.search.pinned));
+            sessionStorage.setItem('sf-session-coordinates', JSON.stringify(CONFIG.coordinates));
+        } catch (e) {
+            console.error('[Super Find Bar] Failed to save session config:', e);
         }
     }
 
@@ -652,11 +678,17 @@
             chk.checked = CONFIG.search.pinned.includes(key);
             chk.onchange = (e) => {
                 if (e.target.checked) {
-                    if (!CONFIG.search.pinned.includes(key)) CONFIG.search.pinned.push(key);
+                    if (!CONFIG.search.pinned.includes(key)) {
+                        CONFIG.search.pinned.push(key);
+                        // 添加到工具栏时，默认设为不勾选状态
+                        CONFIG.search[key] = false;
+                    }
                 } else {
                     CONFIG.search.pinned = CONFIG.search.pinned.filter(k => k !== key);
+                    // 从工具栏移除时，也清除勾选状态
+                    CONFIG.search[key] = false;
                 }
-                saveConfig();
+                saveSessionConfig(); // 使用会话存储，不持久化
                 renderCheckboxes(chkGroup);
             };
             row.append(lbl, chk);
@@ -1010,7 +1042,7 @@
         xAxisChk.checked = CONFIG.coordinates.showXAxis;
         xAxisChk.onchange = (e) => {
             CONFIG.coordinates.showXAxis = e.target.checked;
-            saveConfig();
+            saveSessionConfig(); // 使用会话存储，不持久化
             updateTickBarPositions();
             drawTickBar();
             showSuccessToast(t('saved'));
@@ -1029,7 +1061,7 @@
         yAxisChk.checked = CONFIG.coordinates.showYAxis;
         yAxisChk.onchange = (e) => {
             CONFIG.coordinates.showYAxis = e.target.checked;
-            saveConfig();
+            saveSessionConfig(); // 使用会话存储，不持久化
             updateTickBarPositions();
             drawTickBar();
             showSuccessToast(t('saved'));
@@ -1146,12 +1178,19 @@
     }
     function mkChk(key, label) {
         const l = document.createElement('label'); l.className = 'sf-chk';
-        const c = document.createElement('input'); c.type='checkbox'; c.checked = CONFIG.search[key];
+        // 只有 pinned 数组中的选项才能被勾选，且读取当前勾选状态
+        const c = document.createElement('input'); 
+        c.type='checkbox'; 
+        c.checked = CONFIG.search.pinned.includes(key) ? CONFIG.search[key] : false;
+        c.disabled = !CONFIG.search.pinned.includes(key); // 不在工具栏中的选项禁用
         c.onchange = () => {
-            CONFIG.search[key] = c.checked;
-            saveConfig();
-            updatePlaceholder();
-            if (!CONFIG.search.fuzzy && !state.manualMode && state.isDirty) triggerSearch();
+            // 只有 pinned 中的选项才能修改勾选状态
+            if (CONFIG.search.pinned.includes(key)) {
+                CONFIG.search[key] = c.checked;
+                saveConfig();
+                updatePlaceholder();
+                if (!CONFIG.search.fuzzy && !state.manualMode && state.isDirty) triggerSearch();
+            }
         };
         l.append(c, document.createTextNode(label)); return l;
     }
@@ -1284,7 +1323,17 @@
         const abortSignal = state.abortController;
 
         const val = input.value;
+        // 创建搜索配置，但只使用 pinned 数组中的选项
         const cfg = JSON.parse(JSON.stringify(CONFIG.search));
+        
+        // 关键逻辑：只有 pinned 数组中的选项才参与搜索筛选
+        // 如果选项不在 pinned 中，强制设为 false（不参与搜索）
+        const searchOptions = ['matchCase', 'wholeWord', 'highlightAll', 'ignoreAccents', 'regex', 'includeHidden', 'fuzzy'];
+        searchOptions.forEach(opt => {
+            if (!CONFIG.search.pinned.includes(opt)) {
+                cfg[opt] = false; // 不在工具栏中的选项不参与搜索
+            }
+        });
 
         state.ranges = [];
         state.idx = -1;

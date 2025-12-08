@@ -15,90 +15,138 @@
                     <h1>Super Find Bar <span class="version">v1.0.0</span></h1>
                 </div>
             </div>
-            <select id="lang-selector">
-                <option value="zh">🇨🇳 简体中文</option>
-                <option value="en">🇺🇸 English</option>
-            </select>
+            <div style="display: flex; gap: 12px; align-items: center;">
+                <button id="theme-toggle" class="theme-toggle-btn" data-i18n-title="toggleTheme">
+                    <span id="theme-icon">🌓</span>
+                </button>
+                <select id="lang-selector">
+                    <option value="zh">🇨🇳 简体中文</option>
+                    <option value="en">🇺🇸 English</option>
+                </select>
+            </div>
         </header>
 
         <!-- 默认搜索设置 -->
         <section class="settings-section">
             <h2 class="section-title" data-i18n="defaultSearchSettings">默认搜索设置</h2>
             
-            <!-- 区分大小写 -->
+            <!-- 搜索选项设置（合并） -->
             <div class="setting-item">
                 <div class="setting-main">
-                    <span class="setting-label" data-i18n="matchCase">区分大小写</span>
-                    <label class="switch">
-                        <input type="checkbox" id="opt-matchCase">
-                        <span class="slider"></span>
-                    </label>
-                </div>
-            </div>
-
-            <!-- 全词匹配 -->
-            <div class="setting-item">
-                <div class="setting-main">
-                    <span class="setting-label" data-i18n="wholeWord">全词匹配</span>
-                    <label class="switch">
-                        <input type="checkbox" id="opt-wholeWord">
-                        <span class="slider"></span>
-                    </label>
-                </div>
-            </div>
-
-            <!-- 高亮所有 -->
-            <div class="setting-item">
-                <div class="setting-main">
-                    <span class="setting-label" data-i18n="highlightAll">高亮所有</span>
-                    <label class="switch">
-                        <input type="checkbox" id="opt-highlightAll">
-                        <span class="slider"></span>
-                    </label>
-                </div>
-            </div>
-
-            <!-- 忽略重音 -->
-            <div class="setting-item">
-                <div class="setting-main">
-                    <span class="setting-label" data-i18n="ignoreAccents">忽略重音</span>
-                    <label class="switch">
-                        <input type="checkbox" id="opt-ignoreAccents">
-                        <span class="slider"></span>
-                    </label>
-                </div>
-            </div>
-
-            <!-- 正则表达式 -->
-            <div class="setting-item">
-                <div class="setting-main">
-                    <span class="setting-label" data-i18n="regex">正则表达式</span>
-                    <label class="switch">
-                        <input type="checkbox" id="opt-regex">
-                        <span class="slider"></span>
-                    </label>
-                </div>
-            </div>
-
-            <!-- 包含隐藏元素 -->
-            <div class="setting-item">
-                <div class="setting-main">
-                    <span class="setting-label" data-i18n="includeHidden">包含隐藏元素</span>
-                    <label class="switch">
-                        <input type="checkbox" id="opt-includeHidden">
-                        <span class="slider"></span>
-                    </label>
-                </div>
-            </div>
-
-            <!-- 模糊搜索 -->
-            <div class="setting-item">
-                <div class="setting-main">
-                    <span class="setting-label" data-i18n="fuzzy">模糊搜索</span>
-                    <label class="switch">
-                        <input type="checkbox" id="opt-fuzzy">
-                        <span class="slider"></span>
-                    </label>
+                    <span class="setting-label" data-i18n="searchOptions">搜索选项设置</span>
+                    <div class="setting-control" style="display: flex; flex-direction: column; gap: 12px;">
+                        <!-- 第一行：两个开关的说明 -->
+                        <div style="display: flex; gap: 16px; align-items: center; padding-bottom: 8px; border-bottom: 1px solid var(--border);">
+                            <div style="display: flex; flex-direction: column; align-items: center; gap: 4px;">
+                                <span style="font-size: 12px; color: var(--text-secondary);" data-i18n="showInToolbar">显示在工具栏</span>
+                                <label class="switch">
+                                    <input type="checkbox" id="toolbar-all" style="display: none;">
+                                    <span class="slider" style="opacity: 0.3; cursor: default;"></span>
+                                </label>
+                            </div>
+                            <div style="display: flex; flex-direction: column; align-items: center; gap: 4px;">
+                                <span style="font-size: 12px; color: var(--text-secondary);" data-i18n="defaultChecked">默认勾选</span>
+                                <label class="switch">
+                                    <input type="checkbox" id="default-all" style="display: none;">
+                                    <span class="slider" style="opacity: 0.3; cursor: default;"></span>
+                                </label>
+                            </div>
+                        </div>
+                        <!-- 选项列表 -->
+                        <div style="display: flex; flex-direction: column; gap: 8px;">
+                            <div class="search-option-row">
+                                <span class="setting-label" data-i18n="matchCase">区分大小写</span>
+                                <div style="display: flex; gap: 16px; align-items: center;">
+                                    <label class="switch" data-i18n-title="showInToolbar">
+                                        <input type="checkbox" id="toolbar-matchCase">
+                                        <span class="slider"></span>
+                                    </label>
+                                    <label class="switch" data-i18n-title="defaultChecked">
+                                        <input type="checkbox" id="opt-matchCase">
+                                        <span class="slider"></span>
+                                    </label>
+                                </div>
+                            </div>
+                            <div class="search-option-row">
+                                <span class="setting-label" data-i18n="wholeWord">全词匹配</span>
+                                <div style="display: flex; gap: 16px; align-items: center;">
+                                    <label class="switch" data-i18n-title="showInToolbar">
+                                        <input type="checkbox" id="toolbar-wholeWord">
+                                        <span class="slider"></span>
+                                    </label>
+                                    <label class="switch" data-i18n-title="defaultChecked">
+                                        <input type="checkbox" id="opt-wholeWord">
+                                        <span class="slider"></span>
+                                    </label>
+                                </div>
+                            </div>
+                            <div class="search-option-row">
+                                <span class="setting-label" data-i18n="highlightAll">高亮所有</span>
+                                <div style="display: flex; gap: 16px; align-items: center;">
+                                    <label class="switch" data-i18n-title="showInToolbar">
+                                        <input type="checkbox" id="toolbar-highlightAll">
+                                        <span class="slider"></span>
+                                    </label>
+                                    <label class="switch" data-i18n-title="defaultChecked">
+                                        <input type="checkbox" id="opt-highlightAll">
+                                        <span class="slider"></span>
+                                    </label>
+                                </div>
+                            </div>
+                            <div class="search-option-row">
+                                <span class="setting-label" data-i18n="ignoreAccents">忽略重音</span>
+                                <div style="display: flex; gap: 16px; align-items: center;">
+                                    <label class="switch" data-i18n-title="showInToolbar">
+                                        <input type="checkbox" id="toolbar-ignoreAccents">
+                                        <span class="slider"></span>
+                                    </label>
+                                    <label class="switch" data-i18n-title="defaultChecked">
+                                        <input type="checkbox" id="opt-ignoreAccents">
+                                        <span class="slider"></span>
+                                    </label>
+                                </div>
+                            </div>
+                            <div class="search-option-row">
+                                <span class="setting-label" data-i18n="regex">正则表达式</span>
+                                <div style="display: flex; gap: 16px; align-items: center;">
+                                    <label class="switch" data-i18n-title="showInToolbar">
+                                        <input type="checkbox" id="toolbar-regex">
+                                        <span class="slider"></span>
+                                    </label>
+                                    <label class="switch" data-i18n-title="defaultChecked">
+                                        <input type="checkbox" id="opt-regex">
+                                        <span class="slider"></span>
+                                    </label>
+                                </div>
+                            </div>
+                            <div class="search-option-row">
+                                <span class="setting-label" data-i18n="includeHidden">包含隐藏元素</span>
+                                <div style="display: flex; gap: 16px; align-items: center;">
+                                    <label class="switch" data-i18n-title="showInToolbar">
+                                        <input type="checkbox" id="toolbar-includeHidden">
+                                        <span class="slider"></span>
+                                    </label>
+                                    <label class="switch" data-i18n-title="defaultChecked">
+                                        <input type="checkbox" id="opt-includeHidden">
+                                        <span class="slider"></span>
+                                    </label>
+                                </div>
+                            </div>
+                            <div class="search-option-row">
+                                <span class="setting-label" data-i18n="fuzzy">模糊搜索</span>
+                                <div style="display: flex; gap: 16px; align-items: center;">
+                                    <label class="switch" data-i18n-title="showInToolbar">
+                                        <input type="checkbox" id="toolbar-fuzzy">
+                                        <span class="slider"></span>
+                                    </label>
+                                    <label class="switch" data-i18n-title="defaultChecked">
+                                        <input type="checkbox" id="opt-fuzzy">
+                                        <span class="slider"></span>
+                                    </label>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
                 </div>
                 <div class="setting-desc-box">
                     <div style="display: flex; justify-content: space-between; align-items: center;">
@@ -117,7 +165,7 @@
                     <span class="setting-label" data-i18n="perfThreshold">自动搜索阈值（节点数）</span>
                     <div class="setting-control" style="display: flex; align-items: center; gap: 8px;">
                         <input type="number" id="perf-threshold" min="1000" max="50000" step="1000">
-                        <button id="reset-perf-threshold" class="reset-icon-btn" title="重置">↺</button>
+                        <button id="reset-perf-threshold" class="reset-icon-btn" data-i18n-title="reset">↺</button>
                     </div>
                 </div>
                 <div class="setting-desc-box" data-i18n="perfThresholdHint">
@@ -142,6 +190,44 @@
                 </div>
                 <div class="setting-desc-box" data-i18n="scrollBehaviorHint">
                     始终居中：避免被浮动元素遮挡，适合 ChatGPT 等网站 | 仅不可见时滚动：减少跳动，适合长文档阅读
+                </div>
+            </div>
+
+            <!-- 坐标轴位置 -->
+            <div class="setting-item">
+                <div class="setting-main">
+                    <span class="setting-label" data-i18n="axisPosition">坐标轴位置</span>
+                    <div class="setting-control" style="display: flex; flex-direction: column; gap: 8px;">
+                        <div style="display: flex; align-items: center; gap: 16px;">
+                            <span style="font-size: 13px; color: var(--text-secondary);" data-i18n="xAxisPosition">X 轴位置</span>
+                            <div class="radio-options">
+                                <label class="radio-label">
+                                    <input type="radio" name="x-axis-position" value="top">
+                                    <span data-i18n="axisTop">顶部</span>
+                                </label>
+                                <label class="radio-label">
+                                    <input type="radio" name="x-axis-position" value="bottom">
+                                    <span data-i18n="axisBottom">底部</span>
+                                </label>
+                            </div>
+                        </div>
+                        <div style="display: flex; align-items: center; gap: 16px;">
+                            <span style="font-size: 13px; color: var(--text-secondary);" data-i18n="yAxisPosition">Y 轴位置</span>
+                            <div class="radio-options">
+                                <label class="radio-label">
+                                    <input type="radio" name="y-axis-position" value="left">
+                                    <span data-i18n="axisLeft">左侧</span>
+                                </label>
+                                <label class="radio-label">
+                                    <input type="radio" name="y-axis-position" value="right">
+                                    <span data-i18n="axisRight">右侧</span>
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="setting-desc-box" data-i18n="axisPositionHint">
+                    当搜索栏位于底部(BOT)时，X轴会自动调整到顶部，避免遮挡
                 </div>
             </div>
 
@@ -195,7 +281,7 @@
                         <!-- JS 动态生成 -->
                         <div class="color-circle"><input type="color" value="#fce8b2"></div>
                         <div class="color-circle"><input type="color" value="#ccff90"></div>
-                        <button id="reset-colors" class="reset-icon-btn" title="重置">↺</button>
+                        <button id="reset-colors" class="reset-icon-btn" data-i18n-title="reset">↺</button>
                     </div>
                 </div>
             </div>
@@ -205,8 +291,8 @@
                 <div class="setting-main">
                     <span class="setting-label" data-i18n="themeColors">主题颜色</span>
                     <div class="color-group">
-                        <div class="color-circle" title="背景"><input type="color" id="theme-bg"></div>
-                        <div class="color-circle" title="文字"><input type="color" id="theme-text"></div>
+                        <div class="color-circle" data-i18n-title="background"><input type="color" id="theme-bg"></div>
+                        <div class="color-circle" data-i18n-title="textColor"><input type="color" id="theme-text"></div>
                     </div>
                 </div>
                 <div class="setting-desc-box">
@@ -231,16 +317,13 @@
                     <div class="shortcut-display">
                         <span class="key-badge">Ctrl+Shift+F</span>
                         <span style="color:var(--text-secondary); font-size:12px;">(Mac: Cmd+Shift+F)</span>
+                        <button id="open-chrome-shortcuts" class="btn btn-primary" style="font-size:12px; padding:4px 12px; margin-left: 8px;">
+                            ⚙️ <span data-i18n="customShortcut">自定义快捷键</span>
+                        </button>
                     </div>
                 </div>
                 <div class="setting-desc-box warning">
-                    ⚠️ <strong data-i18n="imeConflictWarning">输入法冲突提示：</strong><span data-i18n="imeConflictHint">如果 Ctrl+Shift+F 触发微软输入法简繁切换，请在系统输入法设置中关闭该快捷键。</span>
-                </div>
-                <div class="setting-desc-box" style="border-top: none; padding-top: 0; display: flex; justify-content: space-between; align-items: center;">
-                    <span style="font-size: 12px; color: var(--text-secondary);" data-i18n="shortcutNotWorking">快捷键在扩展商店等系统页面不生效</span>
-                    <button id="open-chrome-shortcuts" class="btn" style="border:1px solid var(--border); font-size:12px; padding:4px 12px;">
-                        ⚙️ <span data-i18n="customShortcut">自定义快捷键</span>
-                    </button>
+                    ⚠️ <strong data-i18n="imeConflictWarning">输入法冲突提示：</strong><span data-i18n="imeConflictHint">如果 Ctrl+Shift+F 触发微软输入法简繁切换，请在系统输入法设置中关闭该快捷键。</span> <span data-i18n="shortcutNotWorking">快捷键在扩展商店等系统页面不生效</span>
                 </div>
             </div>
         </section>
