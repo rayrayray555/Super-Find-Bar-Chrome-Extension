@@ -40,6 +40,9 @@
             xPosition: 'bottom', // X 轴位置：top | bottom
             yPosition: 'right'   // Y 轴位置：left | right
         },
+        scroll: {
+            alwaysCenter: true  // 始终居中显示搜索结果（避免被浮动元素遮挡）
+        },
         colors: [
             '#fce8b2', // Yellow
             '#ccff90', // Green
@@ -66,11 +69,13 @@
                     layout: { ...DEFAULT_CONFIG.layout, ...result[STORAGE_KEY].layout },
                     search: { ...DEFAULT_CONFIG.search, ...result[STORAGE_KEY].search },
                     coordinates: { ...DEFAULT_CONFIG.coordinates, ...result[STORAGE_KEY].coordinates },
+                    scroll: { ...DEFAULT_CONFIG.scroll, ...result[STORAGE_KEY].scroll },
                     colors: result[STORAGE_KEY].colors || DEFAULT_CONFIG.colors
                 };
             }
             if (!CONFIG.lang) CONFIG.lang = 'zh';
             if (!CONFIG.coordinates) CONFIG.coordinates = DEFAULT_CONFIG.coordinates;
+            if (!CONFIG.scroll) CONFIG.scroll = DEFAULT_CONFIG.scroll;
         } catch (e) {
             console.error('[Super Find Bar] Failed to load config:', e);
         }
@@ -662,24 +667,58 @@
         const grpSearch = document.createElement('div');
         grpSearch.innerHTML = `<div class="sf-group-title">${t('group.search')}</div>`;
 
-        // Fuzzy Tolerance
-        const fuzzyRow = document.createElement('div');
-        fuzzyRow.className = 'sf-adv-row';
-        fuzzyRow.style.flexWrap = 'wrap';
-        fuzzyRow.innerHTML = `<span class="sf-adv-lbl">${t('lbl.fuzzyTol')}</span>`;
-        const fuzzyVal = document.createElement('span');
-        fuzzyVal.style.fontSize = '12px'; fuzzyVal.style.marginLeft = 'auto'; fuzzyVal.textContent = CONFIG.search.fuzzyTolerance;
-        const fuzzyRange = document.createElement('input');
-        fuzzyRange.type = 'range'; fuzzyRange.min = '0'; fuzzyRange.max = '5'; fuzzyRange.step = '1';
-        fuzzyRange.style.width = '100%'; fuzzyRange.style.marginTop = '4px';
-        fuzzyRange.value = CONFIG.search.fuzzyTolerance;
-        fuzzyRange.oninput = (e) => {
-            CONFIG.search.fuzzyTolerance = parseInt(e.target.value);
-            fuzzyVal.textContent = CONFIG.search.fuzzyTolerance;
+        // 模糊搜索开关（与其他工具栏选项一致）
+        const fuzzySwitchRow = document.createElement('div');
+        fuzzySwitchRow.className = 'sf-adv-row';
+        const fuzzyLbl = document.createElement('span');
+        fuzzyLbl.className = 'sf-adv-lbl';
+        fuzzyLbl.textContent = t('opts.fuzzy');
+        const fuzzyChk = document.createElement('input');
+        fuzzyChk.type = 'checkbox';
+        fuzzyChk.checked = CONFIG.search.fuzzy;
+        fuzzyChk.onchange = (e) => {
+            CONFIG.search.fuzzy = e.target.checked;
             saveConfig();
             showSuccessToast(t('saved'));
         };
-        fuzzyRow.append(fuzzyVal, fuzzyRange);
+        fuzzySwitchRow.append(fuzzyLbl, fuzzyChk);
+
+        // 容错字符数（紧凑布局，参考图片）
+        const fuzzyToleranceRow = document.createElement('div');
+        fuzzyToleranceRow.className = 'sf-adv-row';
+        fuzzyToleranceRow.style.marginTop = '4px';
+        fuzzyToleranceRow.style.paddingLeft = '12px';
+        fuzzyToleranceRow.style.fontSize = '12px';
+        const toleranceLabel = document.createElement('span');
+        toleranceLabel.textContent = CONFIG.lang === 'zh' ? '容错字符数' : 'Tolerance';
+        toleranceLabel.style.marginRight = 'auto';
+        
+        const toleranceControl = document.createElement('div');
+        toleranceControl.style.display = 'flex';
+        toleranceControl.style.alignItems = 'center';
+        toleranceControl.style.gap = '8px';
+        
+        const fuzzyRange = document.createElement('input');
+        fuzzyRange.type = 'range';
+        fuzzyRange.min = '0';
+        fuzzyRange.max = '5';
+        fuzzyRange.step = '1';
+        fuzzyRange.value = CONFIG.search.fuzzyTolerance;
+        fuzzyRange.style.width = '80px';
+        fuzzyRange.oninput = (e) => {
+            CONFIG.search.fuzzyTolerance = parseInt(e.target.value);
+            toleranceValue.textContent = CONFIG.search.fuzzyTolerance;
+            saveConfig();
+            showSuccessToast(t('saved'));
+        };
+        
+        const toleranceValue = document.createElement('span');
+        toleranceValue.textContent = CONFIG.search.fuzzyTolerance;
+        toleranceValue.style.minWidth = '20px';
+        toleranceValue.style.textAlign = 'center';
+        
+        toleranceControl.append(fuzzyRange, toleranceValue);
+        fuzzyToleranceRow.append(toleranceLabel, toleranceControl);
 
         // Performance Threshold
         const perfRow = document.createElement('div');
@@ -701,19 +740,22 @@
             showSuccessToast(t('saved'));
         };
 
-        const btnReset = mkBtn(t('titles.reset'), 'Default 3000', () => {
-            CONFIG.search.perfThreshold = 3000;
-            perfInp.value = 3000;
+        // 性能阈值重置按钮（环形箭头）
+        const btnResetPerf = document.createElement('button');
+        btnResetPerf.innerHTML = '↺';
+        btnResetPerf.title = CONFIG.lang === 'zh' ? '重置为默认' : 'Reset to Default';
+        btnResetPerf.style.cssText = 'width:28px;height:28px;padding:0;font-size:16px;border-radius:50%;border:1px solid rgba(255,255,255,0.3);background:rgba(255,255,255,0.1);cursor:pointer;display:flex;align-items:center;justify-content:center;';
+        btnResetPerf.onmouseover = () => btnResetPerf.style.background = 'rgba(255,255,255,0.2)';
+        btnResetPerf.onmouseout = () => btnResetPerf.style.background = 'rgba(255,255,255,0.1)';
+        btnResetPerf.onclick = () => {
+            CONFIG.search.perfThreshold = DEFAULT_CONFIG.search.perfThreshold;
+            perfInp.value = CONFIG.search.perfThreshold;
             saveConfig();
-        });
-        btnReset.style.fontSize = '10px'; btnReset.style.padding='2px 4px';
+            showSuccessToast(t('saved'));
+        };
 
-        perfCtrl.append(perfInp, btnReset);
+        perfCtrl.append(perfInp, btnResetPerf);
         perfRow.append(perfCtrl);
-
-        const perfHint = document.createElement('div');
-        perfHint.className = 'sf-hint';
-        perfHint.textContent = t('lbl.perfHint');
 
         // 多词颜色方案设置（8列：7色块 + 重置按钮）
         const colorSchemeRow = document.createElement('div');
@@ -737,10 +779,22 @@
             colorWrap.style.flexDirection = 'column';
             colorWrap.style.alignItems = 'center';
             
+            // 圆形颜色选择器（与 options.html 一致）
+            const colorCircle = document.createElement('div');
+            colorCircle.style.cssText = 'width:28px;height:28px;border-radius:50%;border:2px solid rgba(255,255,255,0.25);overflow:hidden;cursor:pointer;position:relative;transition:transform 0.2s;';
+            colorCircle.onmouseover = () => {
+                colorCircle.style.transform = 'scale(1.1)';
+                colorCircle.style.borderColor = 'rgba(255,255,255,0.4)';
+            };
+            colorCircle.onmouseout = () => {
+                colorCircle.style.transform = 'scale(1)';
+                colorCircle.style.borderColor = 'rgba(255,255,255,0.25)';
+            };
+            
             const colorInp = document.createElement('input');
             colorInp.type = 'color';
             colorInp.value = color;
-            colorInp.style.cssText = 'width:32px;height:32px;border:2px solid rgba(255,255,255,0.2);cursor:pointer;border-radius:4px;';
+            colorInp.style.cssText = 'position:absolute;top:-50%;left:-50%;width:200%;height:200%;border:none;padding:0;margin:0;cursor:pointer;';
             colorInp.onchange = (e) => {
                 CONFIG.colors[idx] = e.target.value;
                 saveConfig();
@@ -748,13 +802,15 @@
                 showSuccessToast(t('saved'));
             };
             
+            colorCircle.appendChild(colorInp);
+            
             const colorLabel = document.createElement('div');
             colorLabel.textContent = idx + 1;
             colorLabel.style.fontSize = '9px';
             colorLabel.style.marginTop = '2px';
-            colorLabel.style.opacity = '0.6';
+            colorLabel.style.opacity = '0.7';
             
-            colorWrap.append(colorInp, colorLabel);
+            colorWrap.append(colorCircle, colorLabel);
             colorGrid.appendChild(colorWrap);
         });
 
@@ -764,10 +820,19 @@
         resetWrap.style.alignItems = 'center';
         resetWrap.style.justifyContent = 'center';
         
+        // 颜色重置按钮（环形箭头，统一样式）
         const btnResetColors = document.createElement('button');
-        btnResetColors.innerHTML = '🔄';
+        btnResetColors.innerHTML = '↺';
         btnResetColors.title = CONFIG.lang === 'zh' ? '重置为默认' : 'Reset Colors';
-        btnResetColors.style.cssText = 'width:32px;height:32px;padding:0;font-size:16px;border-radius:4px;';
+        btnResetColors.style.cssText = 'width:36px;height:36px;padding:0;font-size:18px;border-radius:50%;border:2px solid rgba(255,255,255,0.25);background:rgba(255,255,255,0.1);cursor:pointer;display:flex;align-items:center;justify-content:center;transition:transform 0.2s;';
+        btnResetColors.onmouseover = () => {
+            btnResetColors.style.transform = 'scale(1.1)';
+            btnResetColors.style.borderColor = 'rgba(255,255,255,0.4)';
+        };
+        btnResetColors.onmouseout = () => {
+            btnResetColors.style.transform = 'scale(1)';
+            btnResetColors.style.borderColor = 'rgba(255,255,255,0.25)';
+        };
         btnResetColors.onclick = () => {
             CONFIG.colors = [...DEFAULT_CONFIG.colors];
             saveConfig();
@@ -787,7 +852,7 @@
 
         colorSchemeRow.append(colorGrid);
 
-        grpSearch.append(fuzzyRow, perfRow, perfHint, colorSchemeRow);
+        grpSearch.append(fuzzySwitchRow, fuzzyToleranceRow, perfRow, colorSchemeRow);
 
         // Group 3: Layout
         const grpLayout = document.createElement('div');
@@ -1474,9 +1539,14 @@
     function scrollToRangeImmediate(range) {
         try {
             const rect = range.getBoundingClientRect();
-            const isOutOfView = rect.top < 0 || rect.bottom > window.innerHeight;
             
-            if (!isOutOfView) return;
+            // 根据配置决定滚动行为
+            if (!CONFIG.scroll.alwaysCenter) {
+                // 仅当结果不在可视区域时才滚动
+                const isOutOfView = rect.top < 0 || rect.bottom > window.innerHeight;
+                if (!isOutOfView) return;
+            }
+            // alwaysCenter=true: 始终滚动到屏幕中间，避免被浮动元素遮挡
             
             let targetElement = range.startContainer;
             while (targetElement && targetElement.nodeType === Node.TEXT_NODE) {

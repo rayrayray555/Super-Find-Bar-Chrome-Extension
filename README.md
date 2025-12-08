@@ -89,11 +89,11 @@
 
 ### 手动安装（开发版） / Manual Installation (Development)
 
-```bash
+   ```bash
 # 克隆仓库 / Clone repository
 git clone https://github.com/rayrayray555/Super-Find-Bar-Chrome-Extension.git
 cd Super-Find-Bar-Chrome-Extension
-```
+   ```
 
 **步骤 / Steps:**
 
@@ -153,7 +153,7 @@ Click the gear icon ⚙️ to open the settings panel:
 - 配置X/Y坐标轴显示
 - Configure X/Y coordinate axis display
 
-- 设置性能阈值
+  - 设置性能阈值
 - Set performance threshold
 
 **模糊搜索 / Fuzzy Search**
