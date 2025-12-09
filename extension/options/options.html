@@ -32,128 +32,146 @@
             
             <!-- 搜索选项设置（合并） -->
             <div class="setting-item">
-                <div class="setting-main">
-                    <span class="setting-label" data-i18n="searchOptions">搜索选项设置</span>
-                    <div class="setting-control" style="display: flex; flex-direction: column; gap: 12px;">
-                        <!-- 第一行：两个开关的说明 -->
-                        <div style="display: flex; gap: 16px; align-items: center; padding-bottom: 8px; border-bottom: 1px solid var(--border);">
-                            <div style="display: flex; flex-direction: column; align-items: center; gap: 4px;">
-                                <span style="font-size: 12px; color: var(--text-secondary);" data-i18n="showInToolbar">显示在工具栏</span>
-                                <label class="switch">
-                                    <input type="checkbox" id="toolbar-all" style="display: none;">
-                                    <span class="slider" style="opacity: 0.3; cursor: default;"></span>
-                                </label>
-                            </div>
-                            <div style="display: flex; flex-direction: column; align-items: center; gap: 4px;">
-                                <span style="font-size: 12px; color: var(--text-secondary);" data-i18n="defaultChecked">默认勾选</span>
-                                <label class="switch">
-                                    <input type="checkbox" id="default-all" style="display: none;">
-                                    <span class="slider" style="opacity: 0.3; cursor: default;"></span>
-                                </label>
+                <div class="setting-main search-options-main">
+                    <div class="setting-control search-options-control">
+                        <!-- 第一行：标题和两个开关的说明在同一行 -->
+                        <div class="search-option-header">
+                            <span class="setting-label" data-i18n="searchOptions">搜索选项设置</span>
+                            <div class="search-option-header-labels">
+                                <span class="header-label" data-i18n="showInToolbar">显示在工具栏</span>
+                                <span class="header-label" data-i18n="defaultChecked">默认开启</span>
                             </div>
                         </div>
                         <!-- 选项列表 -->
-                        <div style="display: flex; flex-direction: column; gap: 8px;">
+                        <div class="search-options-list">
                             <div class="search-option-row">
-                                <span class="setting-label" data-i18n="matchCase">区分大小写</span>
-                                <div style="display: flex; gap: 16px; align-items: center;">
-                                    <label class="switch" data-i18n-title="showInToolbar">
-                                        <input type="checkbox" id="toolbar-matchCase">
-                                        <span class="slider"></span>
-                                    </label>
-                                    <label class="switch" data-i18n-title="defaultChecked">
-                                        <input type="checkbox" id="opt-matchCase">
-                                        <span class="slider"></span>
-                                    </label>
+                                <span class="search-option-label" data-i18n="matchCase">区分大小写</span>
+                                <div class="search-option-switches">
+                                    <div class="switch-wrapper switch-wrapper-first">
+                                        <label class="switch" data-i18n-title="showInToolbar">
+                                            <input type="checkbox" id="toolbar-matchCase">
+                                            <span class="slider"></span>
+                                        </label>
+                                    </div>
+                                    <div class="switch-wrapper switch-wrapper-last">
+                                        <label class="switch" data-i18n-title="defaultChecked">
+                                            <input type="checkbox" id="opt-matchCase">
+                                            <span class="slider"></span>
+                                        </label>
+                                    </div>
                                 </div>
                             </div>
                             <div class="search-option-row">
-                                <span class="setting-label" data-i18n="wholeWord">全词匹配</span>
-                                <div style="display: flex; gap: 16px; align-items: center;">
-                                    <label class="switch" data-i18n-title="showInToolbar">
-                                        <input type="checkbox" id="toolbar-wholeWord">
-                                        <span class="slider"></span>
-                                    </label>
-                                    <label class="switch" data-i18n-title="defaultChecked">
-                                        <input type="checkbox" id="opt-wholeWord">
-                                        <span class="slider"></span>
-                                    </label>
+                                <span class="search-option-label" data-i18n="wholeWord">全词匹配</span>
+                                <div class="search-option-switches">
+                                    <div class="switch-wrapper switch-wrapper-first">
+                                        <label class="switch" data-i18n-title="showInToolbar">
+                                            <input type="checkbox" id="toolbar-wholeWord">
+                                            <span class="slider"></span>
+                                        </label>
+                                    </div>
+                                    <div class="switch-wrapper switch-wrapper-last">
+                                        <label class="switch" data-i18n-title="defaultChecked">
+                                            <input type="checkbox" id="opt-wholeWord">
+                                            <span class="slider"></span>
+                                        </label>
+                                    </div>
                                 </div>
                             </div>
                             <div class="search-option-row">
-                                <span class="setting-label" data-i18n="highlightAll">高亮所有</span>
-                                <div style="display: flex; gap: 16px; align-items: center;">
-                                    <label class="switch" data-i18n-title="showInToolbar">
-                                        <input type="checkbox" id="toolbar-highlightAll">
-                                        <span class="slider"></span>
-                                    </label>
-                                    <label class="switch" data-i18n-title="defaultChecked">
-                                        <input type="checkbox" id="opt-highlightAll">
-                                        <span class="slider"></span>
-                                    </label>
+                                <span class="search-option-label" data-i18n="highlightAll">高亮所有</span>
+                                <div class="search-option-switches">
+                                    <div class="switch-wrapper switch-wrapper-first">
+                                        <label class="switch" data-i18n-title="showInToolbar">
+                                            <input type="checkbox" id="toolbar-highlightAll">
+                                            <span class="slider"></span>
+                                        </label>
+                                    </div>
+                                    <div class="switch-wrapper switch-wrapper-last">
+                                        <label class="switch" data-i18n-title="defaultChecked">
+                                            <input type="checkbox" id="opt-highlightAll">
+                                            <span class="slider"></span>
+                                        </label>
+                                    </div>
                                 </div>
                             </div>
                             <div class="search-option-row">
-                                <span class="setting-label" data-i18n="ignoreAccents">忽略重音</span>
-                                <div style="display: flex; gap: 16px; align-items: center;">
-                                    <label class="switch" data-i18n-title="showInToolbar">
-                                        <input type="checkbox" id="toolbar-ignoreAccents">
-                                        <span class="slider"></span>
-                                    </label>
-                                    <label class="switch" data-i18n-title="defaultChecked">
-                                        <input type="checkbox" id="opt-ignoreAccents">
-                                        <span class="slider"></span>
-                                    </label>
+                                <span class="search-option-label" data-i18n="ignoreAccents">忽略重音</span>
+                                <div class="search-option-switches">
+                                    <div class="switch-wrapper switch-wrapper-first">
+                                        <label class="switch" data-i18n-title="showInToolbar">
+                                            <input type="checkbox" id="toolbar-ignoreAccents">
+                                            <span class="slider"></span>
+                                        </label>
+                                    </div>
+                                    <div class="switch-wrapper switch-wrapper-last">
+                                        <label class="switch" data-i18n-title="defaultChecked">
+                                            <input type="checkbox" id="opt-ignoreAccents">
+                                            <span class="slider"></span>
+                                        </label>
+                                    </div>
                                 </div>
                             </div>
                             <div class="search-option-row">
-                                <span class="setting-label" data-i18n="regex">正则表达式</span>
-                                <div style="display: flex; gap: 16px; align-items: center;">
-                                    <label class="switch" data-i18n-title="showInToolbar">
-                                        <input type="checkbox" id="toolbar-regex">
-                                        <span class="slider"></span>
-                                    </label>
-                                    <label class="switch" data-i18n-title="defaultChecked">
-                                        <input type="checkbox" id="opt-regex">
-                                        <span class="slider"></span>
-                                    </label>
+                                <span class="search-option-label" data-i18n="regex">正则表达式</span>
+                                <div class="search-option-switches">
+                                    <div class="switch-wrapper switch-wrapper-first">
+                                        <label class="switch" data-i18n-title="showInToolbar">
+                                            <input type="checkbox" id="toolbar-regex">
+                                            <span class="slider"></span>
+                                        </label>
+                                    </div>
+                                    <div class="switch-wrapper switch-wrapper-last">
+                                        <label class="switch" data-i18n-title="defaultChecked">
+                                            <input type="checkbox" id="opt-regex">
+                                            <span class="slider"></span>
+                                        </label>
+                                    </div>
                                 </div>
                             </div>
                             <div class="search-option-row">
-                                <span class="setting-label" data-i18n="includeHidden">包含隐藏元素</span>
-                                <div style="display: flex; gap: 16px; align-items: center;">
-                                    <label class="switch" data-i18n-title="showInToolbar">
-                                        <input type="checkbox" id="toolbar-includeHidden">
-                                        <span class="slider"></span>
-                                    </label>
-                                    <label class="switch" data-i18n-title="defaultChecked">
-                                        <input type="checkbox" id="opt-includeHidden">
-                                        <span class="slider"></span>
-                                    </label>
+                                <span class="search-option-label" data-i18n="includeHidden">包含隐藏元素</span>
+                                <div class="search-option-switches">
+                                    <div class="switch-wrapper switch-wrapper-first">
+                                        <label class="switch" data-i18n-title="showInToolbar">
+                                            <input type="checkbox" id="toolbar-includeHidden">
+                                            <span class="slider"></span>
+                                        </label>
+                                    </div>
+                                    <div class="switch-wrapper switch-wrapper-last">
+                                        <label class="switch" data-i18n-title="defaultChecked">
+                                            <input type="checkbox" id="opt-includeHidden">
+                                            <span class="slider"></span>
+                                        </label>
+                                    </div>
                                 </div>
                             </div>
                             <div class="search-option-row">
-                                <span class="setting-label" data-i18n="fuzzy">模糊搜索</span>
-                                <div style="display: flex; gap: 16px; align-items: center;">
-                                    <label class="switch" data-i18n-title="showInToolbar">
-                                        <input type="checkbox" id="toolbar-fuzzy">
-                                        <span class="slider"></span>
-                                    </label>
-                                    <label class="switch" data-i18n-title="defaultChecked">
-                                        <input type="checkbox" id="opt-fuzzy">
-                                        <span class="slider"></span>
-                                    </label>
+                                <span class="search-option-label" data-i18n="fuzzy">模糊搜索</span>
+                                <div class="search-option-switches">
+                                    <div class="switch-wrapper switch-wrapper-first">
+                                        <label class="switch" data-i18n-title="showInToolbar">
+                                            <input type="checkbox" id="toolbar-fuzzy">
+                                            <span class="slider"></span>
+                                        </label>
+                                    </div>
+                                    <div class="switch-wrapper switch-wrapper-last">
+                                        <label class="switch" data-i18n-title="defaultChecked">
+                                            <input type="checkbox" id="opt-fuzzy">
+                                            <span class="slider"></span>
+                                        </label>
+                                    </div>
                                 </div>
                             </div>
                         </div>
                     </div>
                 </div>
-                <div class="setting-desc-box">
-                    <div style="display: flex; justify-content: space-between; align-items: center;">
+                <div class="setting-desc-box" id="fuzzy-tolerance-box" style="display: none;">
+                    <div class="fuzzy-tolerance-control">
                         <span data-i18n="fuzzyTolerance">容错字符数</span>
                         <div class="control-group">
                             <input type="range" id="fuzzy-tolerance" min="0" max="5" step="1">
-                            <span id="fuzzy-tolerance-value" style="width: 20px; text-align: center;">1</span>
+                            <span id="fuzzy-tolerance-value" class="range-value">1</span>
                         </div>
                     </div>
                 </div>

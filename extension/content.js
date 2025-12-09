@@ -354,7 +354,14 @@
         hasWarned: false,
         abortController: null,
         currentHighlight: null,
-        supportsHighlight: typeof CSS !== 'undefined' && CSS.highlights
+        supportsHighlight: typeof CSS !== 'undefined' && CSS.highlights,
+        // 智能刷新相关状态
+        lastResultCount: 0,
+        lastSearchTime: 0,
+        mutationObserver: null,
+        refreshTimer: null,
+        observeTimeout: null,
+        refreshRetryCount: 0
     };
 
     function tryInit() {
@@ -622,6 +629,8 @@
             
             if (e.key === 'Enter') {
                 e.preventDefault();
+                // Enter键搜索：强制重新检查页面大小并完整搜索
+                checkPageSize();
                 triggerSearch();
                 return;
             }
@@ -1295,7 +1304,157 @@
         updatePlaceholder();
     }
 
-    async function triggerSearch() {
+    /********************
+      智能刷新逻辑 (Smart Refresh Logic)
+    ********************/
+
+    // 启动DOM变化监听器
+    function startMutationObserver() {
+        // 如果已经有监听器在运行，不重复启动
+        if (state.mutationObserver) return;
+        
+        // 重置重试计数
+        state.refreshRetryCount = 0;
+        
+        state.mutationObserver = new MutationObserver((mutations) => {
+            let hasNewText = false;
+            
+            mutations.forEach(mutation => {
+                mutation.addedNodes.forEach(node => {
+                    // 检测是否有新的文本节点或包含文本的元素
+                    if (node.nodeType === Node.TEXT_NODE) {
+                        hasNewText = true;
+                    } else if (node.nodeType === Node.ELEMENT_NODE) {
+                        // 检查元素是否包含文本内容
+                        if (node.textContent && node.textContent.trim().length > 0) {
+                            hasNewText = true;
+                        }
+                    }
+                });
+            });
+            
+            // 如果检测到新文本内容，触发刷新
+            // 移除时间限制：只要搜索栏打开且有搜索结果，就应该响应内容变化
+            if (hasNewText) {
+                // 检查是否有搜索词（避免在搜索栏关闭时刷新）
+                if (input && input.value.trim()) {
+                    debouncedRefreshSearch('mutation');
+                }
+            }
+        });
+        
+        // 监听document.body的所有子节点变化和子树变化
+        state.mutationObserver.observe(document.body, {
+            childList: true,
+            subtree: true,
+            characterData: false // 不监听文本内容变化，只监听节点添加
+        });
+        
+        // 设置监听超时：30秒后自动停止（延长监听时间，确保能检测到延迟加载的内容）
+        // 注意：监听器会在搜索栏关闭时自动停止，这里只是作为安全机制
+        if (state.observeTimeout) {
+            clearTimeout(state.observeTimeout);
+        }
+        state.observeTimeout = setTimeout(() => {
+            stopMutationObserver();
+        }, 30000); // 延长到30秒
+    }
+
+    // 停止DOM变化监听器
+    function stopMutationObserver() {
+        if (state.mutationObserver) {
+            state.mutationObserver.disconnect();
+            state.mutationObserver = null;
+        }
+        if (state.observeTimeout) {
+            clearTimeout(state.observeTimeout);
+            state.observeTimeout = null;
+        }
+        state.refreshRetryCount = 0;
+    }
+
+    // 防抖刷新搜索
+    function debouncedRefreshSearch(source) {
+        // 如果当前没有搜索词，不刷新
+        if (!input || !input.value.trim()) return;
+        
+        // 清除之前的定时器
+        if (state.refreshTimer) {
+            clearTimeout(state.refreshTimer);
+        }
+        
+        // 限制刷新频率：最小间隔300ms
+        const now = Date.now();
+        const timeSinceLastRefresh = now - state.lastSearchTime;
+        const minInterval = 300;
+        
+        if (timeSinceLastRefresh < minInterval) {
+            // 延迟执行，确保最小间隔
+            state.refreshTimer = setTimeout(() => {
+                refreshSearch(source);
+            }, minInterval - timeSinceLastRefresh);
+        } else {
+            // 立即执行
+            refreshSearch(source);
+        }
+    }
+
+    // 刷新搜索
+    async function refreshSearch(source) {
+        // 限制重试次数：最多3次
+        if (source === 'mutation' && state.refreshRetryCount >= 3) {
+            stopMutationObserver();
+            return;
+        }
+        
+        if (source === 'mutation') {
+            state.refreshRetryCount++;
+        }
+        
+        // 记录刷新时间
+        state.lastSearchTime = Date.now();
+        
+        // 延迟500ms等待页面内容加载完成
+        await new Promise(r => setTimeout(r, 500));
+        
+        // 如果搜索词已清空，不刷新
+        if (!input || !input.value.trim()) return;
+        
+        // 执行搜索（标记为自动刷新）
+        const previousCount = state.ranges.length;
+        await triggerSearch(true); // true表示这是自动刷新
+        const currentCount = state.ranges.length;
+        
+        // 更新结果数量记录
+        state.lastResultCount = currentCount;
+        
+        // 如果结果数量明显增加（增加10%以上），继续监听
+        if (currentCount > previousCount * 1.1 && source === 'mutation') {
+            // 结果增加了，继续监听可能的新内容（重新启动监听器，延长监听时间）
+            startMutationObserver();
+        } else if (source === 'mutation') {
+            // 结果没有明显增加，但重试次数还没到上限，继续监听（重新启动延长监听时间）
+            // 如果重试次数已到上限，会在下次refreshSearch时停止
+            if (state.refreshRetryCount < 3) {
+                startMutationObserver();
+            }
+        }
+    }
+
+    // 切换后检测是否需要刷新
+    function checkAndRefreshAfterSwitch() {
+        // 如果当前没有搜索结果，不需要刷新
+        if (!state.ranges.length || !input.value.trim()) return;
+        
+        // 延迟300ms后检测（给页面加载时间）
+        setTimeout(() => {
+            // 切换后重新启动监听器，延长监听时间
+            // 这样可以检测到切换后触发的页面加载
+            startMutationObserver();
+        }, 300);
+    }
+
+    async function triggerSearch(isAutoRefresh = false) {
         if (state.abortController) {
             state.abortController.abort = true;
         }
@@ -1493,6 +1652,8 @@
 
         if (abortSignal.abort || state.searchId !== currentId) {
             state.abortController = null;
+            // 搜索被取消时，停止监听器
+            stopMutationObserver();
             return;
         }
 
@@ -1515,10 +1676,29 @@
         }
 
         updateUI();
-        if (allRanges.length > 0) {
-            go(1);
+        
+        // 更新搜索结果数量和时间
+        state.lastResultCount = allRanges.length;
+        state.lastSearchTime = Date.now();
+        
+        // 如果是用户主动搜索（非自动刷新），启动智能刷新监听器
+        if (!isAutoRefresh) {
+            if (allRanges.length > 0) {
+                // 启动DOM变化监听，检测页面内容加载
+                startMutationObserver();
+                go(1);
+            } else {
+                // 没有搜索结果，停止监听
+                stopMutationObserver();
+                drawTickBar();
+            }
         } else {
-            drawTickBar();
+            // 自动刷新：根据结果数量变化决定是否继续监听
+            if (allRanges.length > 0) {
+                go(1);
+            } else {
+                drawTickBar();
+            }
         }
     }
 
@@ -1836,6 +2016,9 @@
         input.classList.toggle('warn-hidden', isHidden);
         highlightAll();
         updateUI();
+        
+        // 智能刷新：切换后检测是否需要刷新搜索结果
+        checkAndRefreshAfterSwitch();
     }
 
     function updateUI() {
@@ -1866,6 +2049,13 @@
             if (state.abortController) {
                 state.abortController.abort = true;
                 state.abortController = null;
+            }
+
+            // 停止智能刷新监听器
+            stopMutationObserver();
+            if (state.refreshTimer) {
+                clearTimeout(state.refreshTimer);
+                state.refreshTimer = null;
             }
 
             if (state.supportsHighlight && CSS.highlights) {

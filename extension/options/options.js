@@ -91,7 +91,7 @@ const I18N = {
         shortcutNotWorking: '快捷键在扩展商店等系统页面不生效',
         customShortcut: '自定义快捷键',
         searchOptions: '搜索选项设置',
-        defaultChecked: '默认勾选',
+        defaultChecked: '默认开启',
         axisPositionHint: '当搜索栏位于底部(BOT)时，X轴会自动调整到顶部，避免遮挡',
         toggleTheme: '切换主题',
         reset: '重置',
@@ -299,6 +299,9 @@ function updateUI() {
 
     // 语言
     document.getElementById('lang-selector').value = CONFIG.lang;
+    
+    // 更新容错字符数区域的显示状态（根据模糊搜索的"显示在工具栏"开关状态）
+    updateFuzzyToleranceVisibility();
 }
 
 // 更新语言
@@ -317,6 +320,21 @@ function updateLanguage(lang) {
             el.title = I18N[lang][key];
         }
     });
+}
+
+// 控制容错字符数区域的显示/隐藏
+function updateFuzzyToleranceVisibility() {
+    const fuzzyToleranceBox = document.getElementById('fuzzy-tolerance-box');
+    const toolbarFuzzySwitch = document.getElementById('toolbar-fuzzy');
+    
+    if (fuzzyToleranceBox && toolbarFuzzySwitch) {
+        // 只有当模糊搜索的"显示在工具栏"开关开启时，才显示容错字符数设置
+        if (toolbarFuzzySwitch.checked) {
+            fuzzyToleranceBox.style.display = 'block';
+        } else {
+            fuzzyToleranceBox.style.display = 'none';
+        }
+    }
 }
 
 // 初始化事件监听
@@ -403,6 +421,12 @@ function initEventListeners() {
                         defaultSwitch.checked = false;
                     }
                 }
+                
+                // 如果是模糊搜索的开关变化，更新容错字符数区域的显示状态
+                if (opt === 'fuzzy') {
+                    updateFuzzyToleranceVisibility();
+                }
+                
                 saveConfig();
             });
         }
@@ -414,6 +438,9 @@ function initEventListeners() {
             }
         }
     });
+    
+    // 初始化时更新容错字符数区域的显示状态
+    updateFuzzyToleranceVisibility();
 
     // 显示按钮 & 持久化
     document.getElementById('show-launch-btn').addEventListener('change', (e) => {
@@ -491,6 +518,8 @@ function initEventListeners() {
     function applyTheme(theme) {
         const root = document.documentElement;
         let actualTheme = theme === 'auto' ? getSystemTheme() : theme;
+        const supportCard = document.querySelector('.support-card');
+        const supportCardH2 = supportCard ? supportCard.querySelector('h2') : null;
         
         if (actualTheme === 'dark') {
             root.style.setProperty('--bg', '#1e1e1e');
@@ -500,6 +529,15 @@ function initEventListeners() {
             root.style.setProperty('--text', '#e8eaed');
             root.style.setProperty('--text-secondary', '#9aa0a6');
             themeIcon.textContent = '🌙';
+            
+            // 黑暗模式下调整support-card样式
+            if (supportCard) {
+                supportCard.style.background = 'linear-gradient(135deg, #1a1a2e 0%, #16213e 100%)';
+                supportCard.style.borderColor = '#2a2a3e';
+            }
+            if (supportCardH2) {
+                supportCardH2.style.color = '#1a73e8'; // 深蓝色，在黑暗模式下清晰可见
+            }
         } else {
             root.style.setProperty('--bg', '#ffffff');
             root.style.setProperty('--surface', '#f8f9fa');
@@ -508,6 +546,15 @@ function initEventListeners() {
             root.style.setProperty('--text', '#202124');
             root.style.setProperty('--text-secondary', '#5f6368');
             themeIcon.textContent = '☀️';
+            
+            // 白天模式下恢复support-card默认样式
+            if (supportCard) {
+                supportCard.style.background = 'linear-gradient(135deg, #e8f0fe 0%, #ffffff 100%)';
+                supportCard.style.borderColor = '#d2e3fc';
+            }
+            if (supportCardH2) {
+                supportCardH2.style.color = ''; // 恢复默认颜色
+            }
         }
         
         if (theme === 'auto') {
