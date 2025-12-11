@@ -61,6 +61,34 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
     }
 });
 
+// 清除临时设置的函数
+function clearTemporarySettings() {
+    chrome.storage.local.remove([
+        'sf-temp-pinned',
+        'sf-temp-coordinates',
+        'sf-temp-search',
+        'sf-temp-scroll',
+        'sf-temp-colors',
+        'sf-temp-layout',
+        'sf-temp-theme',
+        'sf-temp-lang'
+    ], () => {
+        console.log('[Super Find Bar] Temporary settings cleared');
+    });
+}
+
+// 浏览器启动时清除临时设置（chrome.storage.local 中的临时配置）
+chrome.runtime.onStartup.addListener(() => {
+    clearTemporarySettings();
+});
+
+// 扩展安装/更新时也清除临时设置（确保干净的开始）
+chrome.runtime.onInstalled.addListener((details) => {
+    if (details.reason === 'install' || details.reason === 'update') {
+        clearTemporarySettings();
+    }
+});
+
 
 
 

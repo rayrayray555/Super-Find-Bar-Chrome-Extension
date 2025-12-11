@@ -41,7 +41,7 @@
             yPosition: 'right'   // Y 轴位置：left | right
         },
         scroll: {
-            alwaysCenter: true  // 始终居中显示搜索结果（避免被浮动元素遮挡）
+            behavior: 'always-center'  // 滚动行为：'always-center' | 'only-when-hidden'
         },
         colors: [
             '#fce8b2', // Yellow
@@ -76,21 +76,75 @@
             if (!CONFIG.lang) CONFIG.lang = 'zh';
             if (!CONFIG.coordinates) CONFIG.coordinates = DEFAULT_CONFIG.coordinates;
             if (!CONFIG.scroll) CONFIG.scroll = DEFAULT_CONFIG.scroll;
+            // 确保 scroll.behavior 有默认值
+            if (!CONFIG.scroll.behavior) {
+                CONFIG.scroll.behavior = DEFAULT_CONFIG.scroll.behavior;
+            }
             
-            // 从 sessionStorage 加载临时设置（会话级，浏览器关闭后清除）
-            // 优先级：sessionStorage > storage.sync（默认值）
+            // 从 chrome.storage.local 加载临时设置（跨 tab 共享，浏览器关闭后清除）
+            // 优先级：storage.local（临时值）> storage.sync（默认值）
             try {
-                const sessionPinned = sessionStorage.getItem('sf-session-pinned');
-                if (sessionPinned) {
-                    CONFIG.search.pinned = JSON.parse(sessionPinned);
+                const tempConfig = await chrome.storage.local.get([
+                    'sf-temp-pinned',
+                    'sf-temp-coordinates',
+                    'sf-temp-search',
+                    'sf-temp-colors',
+                    'sf-temp-layout',
+                    'sf-temp-theme',
+                    'sf-temp-lang'
+                ]);
+                
+                // 工具栏显示
+                if (tempConfig['sf-temp-pinned']) {
+                    CONFIG.search.pinned = tempConfig['sf-temp-pinned'];
                 }
                 
-                const sessionCoordinates = sessionStorage.getItem('sf-session-coordinates');
-                if (sessionCoordinates) {
-                    CONFIG.coordinates = { ...CONFIG.coordinates, ...JSON.parse(sessionCoordinates) };
+                // 坐标轴设置
+                if (tempConfig['sf-temp-coordinates']) {
+                    CONFIG.coordinates = { ...CONFIG.coordinates, ...tempConfig['sf-temp-coordinates'] };
+                }
+                
+                // 搜索设置
+                if (tempConfig['sf-temp-search']) {
+                    const searchTemp = tempConfig['sf-temp-search'];
+                    CONFIG.search.fuzzy = searchTemp.fuzzy !== undefined ? searchTemp.fuzzy : CONFIG.search.fuzzy;
+                    CONFIG.search.fuzzyTolerance = searchTemp.fuzzyTolerance !== undefined ? searchTemp.fuzzyTolerance : CONFIG.search.fuzzyTolerance;
+                    CONFIG.search.perfThreshold = searchTemp.perfThreshold !== undefined ? searchTemp.perfThreshold : CONFIG.search.perfThreshold;
+                }
+                
+                // 滚动行为设置
+                if (tempConfig['sf-temp-scroll']) {
+                    const scrollTemp = tempConfig['sf-temp-scroll'];
+                    CONFIG.scroll.behavior = scrollTemp.behavior || CONFIG.scroll.behavior;
+                }
+                
+                // 颜色方案
+                if (tempConfig['sf-temp-colors']) {
+                    CONFIG.colors = tempConfig['sf-temp-colors'];
+                }
+                
+                // 布局设置
+                if (tempConfig['sf-temp-layout']) {
+                    const layoutTemp = tempConfig['sf-temp-layout'];
+                    CONFIG.layout.showLaunchBtn = layoutTemp.showLaunchBtn !== undefined ? layoutTemp.showLaunchBtn : CONFIG.layout.showLaunchBtn;
+                    CONFIG.layout.position = layoutTemp.position || CONFIG.layout.position;
+                    CONFIG.layout.mode = layoutTemp.mode || CONFIG.layout.mode;
+                }
+                
+                // 主题设置
+                if (tempConfig['sf-temp-theme']) {
+                    const themeTemp = tempConfig['sf-temp-theme'];
+                    CONFIG.theme.bg = themeTemp.bg || CONFIG.theme.bg;
+                    CONFIG.theme.text = themeTemp.text || CONFIG.theme.text;
+                    CONFIG.theme.opacity = themeTemp.opacity !== undefined ? themeTemp.opacity : CONFIG.theme.opacity;
+                }
+                
+                // 语言设置
+                if (tempConfig['sf-temp-lang']) {
+                    CONFIG.lang = tempConfig['sf-temp-lang'];
                 }
             } catch (e) {
-                console.error('[Super Find Bar] Failed to load session config:', e);
+                console.error('[Super Find Bar] Failed to load temporary config:', e);
             }
         } catch (e) {
             console.error('[Super Find Bar] Failed to load config:', e);
@@ -105,13 +159,35 @@
         }
     }
     
-    // 保存会话级临时配置（不持久化，浏览器关闭后清除）
-    function saveSessionConfig() {
+    // 保存临时配置到 chrome.storage.local（跨 tab 共享，浏览器关闭后由 background.js 清除）
+    async function saveSessionConfig() {
         try {
-            sessionStorage.setItem('sf-session-pinned', JSON.stringify(CONFIG.search.pinned));
-            sessionStorage.setItem('sf-session-coordinates', JSON.stringify(CONFIG.coordinates));
+            await chrome.storage.local.set({
+                'sf-temp-pinned': CONFIG.search.pinned,
+                'sf-temp-coordinates': CONFIG.coordinates,
+                'sf-temp-search': {
+                    fuzzy: CONFIG.search.fuzzy,
+                    fuzzyTolerance: CONFIG.search.fuzzyTolerance,
+                    perfThreshold: CONFIG.search.perfThreshold
+                },
+                'sf-temp-scroll': {
+                    behavior: CONFIG.scroll.behavior
+                },
+                'sf-temp-colors': CONFIG.colors,
+                'sf-temp-layout': {
+                    showLaunchBtn: CONFIG.layout.showLaunchBtn,
+                    position: CONFIG.layout.position,
+                    mode: CONFIG.layout.mode
+                },
+                'sf-temp-theme': {
+                    bg: CONFIG.theme.bg,
+                    text: CONFIG.theme.text,
+                    opacity: CONFIG.theme.opacity
+                },
+                'sf-temp-lang': CONFIG.lang
+            });
         } catch (e) {
-            console.error('[Super Find Bar] Failed to save session config:', e);
+            console.error('[Super Find Bar] Failed to save temporary config:', e);
         }
     }
 
@@ -407,6 +483,53 @@
     function init() {
         if (document.getElementById(HOST_ID)) return;
 
+        // 将涟漪动画样式添加到document.head（因为涟漪元素添加到document.body，需要全局样式）
+        if (!document.getElementById('sf-ripple-styles')) {
+            const rippleStyle = document.createElement('style');
+            rippleStyle.id = 'sf-ripple-styles';
+            rippleStyle.textContent = `
+                @keyframes sf-ripple-animation {
+                    0% {
+                        transform: scale(0);
+                        opacity: 0.8;
+                    }
+                    100% {
+                        transform: scale(6);
+                        opacity: 0;
+                    }
+                }
+                .sf-ripple {
+                    position: fixed;
+                    border-radius: 50%;
+                    border: 3px solid #8ab4f8;
+                    pointer-events: none;
+                    z-index: 2147483646;
+                    animation: sf-ripple-animation 1.5s ease-out;
+                }
+                .sf-ripple::before,
+                .sf-ripple::after {
+                    content: '';
+                    position: absolute;
+                    border-radius: 50%;
+                    border: 3px solid #8ab4f8;
+                    top: -3px;
+                    left: -3px;
+                    width: 100%;
+                    height: 100%;
+                    animation: sf-ripple-animation 1.5s ease-out;
+                }
+                .sf-ripple::before {
+                    animation-delay: 0.2s;
+                    opacity: 0.6;
+                }
+                .sf-ripple::after {
+                    animation-delay: 0.4s;
+                    opacity: 0.4;
+                }
+            `;
+            document.head.appendChild(rippleStyle);
+        }
+
         const host = document.createElement('div');
         host.id = HOST_ID;
         Object.assign(host.style, { position: 'fixed', top: '0', left: '0', zIndex: 2147483647, pointerEvents: 'none' });
@@ -430,37 +553,38 @@
             }
 
             .sf-box.mode-float {
-                flex-direction: column; width: 485px; border-radius: 12px; margin: 20px; padding: 10px;
+                flex-direction: column; width: 435px; border-radius: 12px; margin: 20px; padding: 10px;
             }
-            .mode-float .sf-row-top { display: flex; align-items: center; gap: 8px; width: 100%; }
+            .mode-float .sf-row-top { display: flex; align-items: center; gap: 6px; width: 100%; }
             .mode-float .sf-row-bot { margin-top: 8px; padding-top: 8px; border-top: 1px solid rgba(255,255,255,0.1); }
-            .mode-float .sf-chk-group { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+            .mode-float .sf-chk-group { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
 
-            .sf-pos-top-right { top: 0; right: 0; transform: translateY(-120%); }
+            .sf-pos-top-right { top: 0; right: 0; transform: translateY(-150%); }
             .sf-pos-top-right.show { transform: translateY(0); }
-            .sf-pos-top-left { top: 0; left: 0; transform: translateY(-120%); }
+            .sf-pos-top-left { top: 0; left: 0; transform: translateY(-150%); }
             .sf-pos-top-left.show { transform: translateY(0); }
-            .sf-pos-bottom-right { bottom: 0; right: 0; transform: translateY(120%); }
+            .sf-pos-bottom-right { bottom: 0; right: 0; transform: translateY(150%); }
             .sf-pos-bottom-right.show { transform: translateY(0); }
-            .sf-pos-bottom-left { bottom: 0; left: 0; transform: translateY(120%); }
+            .sf-pos-bottom-left { bottom: 0; left: 0; transform: translateY(150%); }
             .sf-pos-bottom-left.show { transform: translateY(0); }
 
             .sf-box.mode-bar {
                 width: 100%; left: 0; right: 0; margin: 0; border-radius: 0; border: 0;
-                flex-direction: row; align-items: center; padding: 0 16px; height: 50px;
-                justify-content: flex-start; gap: 8px;
+                flex-direction: row; align-items: center; padding: 0 12px; height: 35px;
+                justify-content: flex-start; gap: 6px;
             }
-            .sf-pos-top { top: 0; transform: translateY(-100%); border-bottom: 1px solid rgba(255,255,255,0.1); }
+            .sf-pos-top { top: 0; transform: translateY(-120%); border-bottom: 1px solid rgba(255,255,255,0.1); }
             .sf-pos-top.show { transform: translateY(0); }
-            .sf-pos-bottom { bottom: 0; transform: translateY(100%); border-top: 1px solid rgba(255,255,255,0.1); }
+            .sf-pos-bottom { bottom: 0; transform: translateY(120%); border-top: 1px solid rgba(255,255,255,0.1); }
             .sf-pos-bottom.show { transform: translateY(0); }
 
             .mode-bar .sf-row-top, .mode-bar .sf-row-bot { display: contents; }
-            .mode-bar .sf-input-wrap { order: 1; flex: 0 1 350px; }
-            .mode-bar .sf-btn-prev { order: 2; }
-            .mode-bar .sf-btn-next { order: 3; }
-            .mode-bar .sf-btn-adv { order: 4; margin-right: 12px; }
-            .mode-bar .sf-chk-group { order: 5; display: flex; align-items: center; border-left: 1px solid rgba(255,255,255,0.2); padding-left: 12px; }
+            .mode-bar .sf-input-wrap { order: 1; flex: 0 1 320px; }
+            .mode-bar .sf-btn-radar { order: 2; }
+            .mode-bar .sf-btn-prev { order: 3; }
+            .mode-bar .sf-btn-next { order: 4; }
+            .mode-bar .sf-btn-adv { order: 5; margin-right: 10px; }
+            .mode-bar .sf-chk-group { order: 6; display: flex; align-items: center; border-left: 1px solid rgba(255,255,255,0.2); padding-left: 10px; }
             .mode-bar .sf-btn-pin { order: 99; margin-left: auto; margin-right: 4px; }
             .mode-bar .sf-btn-rate { order: 99; margin-right: 4px; }
             .mode-bar .sf-btn-close { order: 100; }
@@ -470,15 +594,15 @@
             .sf-input-wrap { position: relative; display: flex; align-items: center; flex-grow: 1; }
             input[type="text"] {
                 width: 100%; background: rgba(255,255,255,0.1); border: 2px solid transparent;
-                color: inherit; padding: 6px 40px 6px 8px; border-radius: 6px; outline: none;
-                transition: border-color 0.2s; font-size: 14px;
+                color: inherit; padding: 4px 32px 4px 6px; border-radius: 6px; outline: none;
+                transition: border-color 0.2s; font-size: 12px;
             }
             input[type="text"]:focus { border-color: var(--sf-accent); }
             input[type="text"].warn-hidden { border-color: var(--sf-accent); border-style: dashed; }
 
-            .sf-count { position: absolute; right: 8px; font-size: 11px; opacity: 0.7; pointer-events: none; transition: opacity 0.2s; }
+            .sf-count { position: absolute; right: 6px; font-size: 10px; opacity: 0.7; pointer-events: none; transition: opacity 0.2s; }
             .sf-loading {
-                position: absolute; right: 8px; width: 14px; height: 14px;
+                position: absolute; right: 6px; width: 12px; height: 12px;
                 border: 2px solid rgba(255,255,255,0.3); border-top-color: var(--sf-accent);
                 border-radius: 50%; animation: spin 0.8s linear infinite; display: none;
             }
@@ -486,8 +610,8 @@
 
             button {
                 background: transparent; border: none; color: inherit; cursor: pointer;
-                padding: 6px; border-radius: 4px; display: flex; align-items: center; justify-content: center;
-                transition: background 0.1s; min-width: 28px; height: 28px; flex-shrink: 0;
+                padding: 4px; border-radius: 4px; display: flex; align-items: center; justify-content: center;
+                transition: background 0.1s; min-width: 24px; height: 24px; flex-shrink: 0;
             }
             button:hover { background: rgba(255,255,255,0.15); }
             button.active { color: var(--sf-accent); background: rgba(138, 180, 248, 0.1); }
@@ -504,9 +628,9 @@
             }
 
             .sf-chk {
-                display: inline-flex; align-items: center; gap: 4px; cursor: pointer; user-select: none;
-                opacity: 0.8; font-size: 12px; margin-right: 8px;
-                background: rgba(255,255,255,0.05); padding: 2px 6px; border-radius: 4px;
+                display: inline-flex; align-items: center; gap: 3px; cursor: pointer; user-select: none;
+                opacity: 0.8; font-size: 11px; margin-right: 6px;
+                background: rgba(255,255,255,0.05); padding: 2px 5px; border-radius: 4px;
                 white-space: nowrap;
             }
             .sf-chk:hover { opacity: 1; background: rgba(255,255,255,0.1); }
@@ -521,21 +645,72 @@
             .mode-float .sf-adv-panel { margin-top: 12px; width: 100%; }
             .mode-bar .sf-adv-panel { position: fixed; }
 
-            .sf-grid { display: grid; grid-template-columns: 1fr; gap: 12px; }
+            .sf-grid { display: grid; grid-template-columns: 1fr; gap: 6px; }
             .sf-group-title {
-                font-size: 11px; opacity: 0.5; text-transform: uppercase; font-weight: bold;
-                margin-bottom: 6px; border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 2px;
+                font-size: 10px; opacity: 0.6; text-transform: uppercase; font-weight: 600;
+                margin-bottom: 3px; border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 2px;
                 display:flex; justify-content: space-between; align-items: center;
             }
-            .sf-adv-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px; flex-wrap: wrap;}
-            .sf-adv-lbl { font-size: 13px; }
-            .sf-hint { font-size: 10px; color: #ff9800; margin-top: 2px; line-height: 1.2; width: 100%; }
+            .sf-adv-row { 
+                display: flex; align-items: center; justify-content: space-between; 
+                margin-bottom: 1px; flex-wrap: wrap;
+                min-height: 20px;
+                padding: 1px 0;
+            }
+            .sf-adv-lbl { 
+                font-size: 10px; 
+                flex: 1;
+                color: var(--sf-txt);
+            }
+            .sf-hint { 
+                font-size: 10px; 
+                color: #ff9800; 
+                margin-top: 2px; 
+                line-height: 1.3; 
+                width: 100%; 
+                padding-left: 0;
+            }
+            .sf-switch-label {
+                position: relative;
+                display: inline-block;
+                width: 28px;
+                height: 16px;
+            }
+            .sf-slider {
+                position: absolute;
+                cursor: pointer;
+                top: 0;
+                left: 0;
+                right: 0;
+                bottom: 0;
+                background-color: rgba(255,255,255,0.2);
+                transition: .3s;
+                border-radius: 16px;
+            }
+            .sf-slider:before {
+                position: absolute;
+                content: "";
+                height: 12px;
+                width: 12px;
+                left: 2px;
+                bottom: 2px;
+                background-color: white;
+                transition: .3s;
+                border-radius: 50%;
+                box-shadow: 0 1px 2px rgba(0,0,0,0.2);
+            }
+            input:checked ~ .sf-slider {
+                background-color: var(--sf-accent);
+            }
+            input:checked ~ .sf-slider:before {
+                transform: translateX(12px);
+            }
 
             .sf-mini-map { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; width: 60px; }
-            .sf-mini-btn { height: 24px; background: rgba(255,255,255,0.1); border-radius: 2px; cursor: pointer; border: 1px solid transparent; }
+            .sf-mini-btn { height: 15px; width: 15px; background: rgba(255,255,255,0.1); border-radius: 2px; cursor: pointer; border: 1px solid transparent; }
             .sf-mini-btn:hover { background: var(--sf-accent); }
             .sf-mini-btn.active { background: var(--sf-accent); border-color: #fff; }
-            .sf-bar-btn { width: 100%; height: 20px; background: rgba(255,255,255,0.1); cursor: pointer; border-radius: 2px; margin-top: 4px; border: 1px solid transparent; text-align:center; line-height:18px; font-size:10px;}
+            .sf-bar-btn { width: 100%; height: 15px; background: rgba(255,255,255,0.1); cursor: pointer; border-radius: 2px; border: 1px solid transparent; text-align:center; line-height:15px; font-size:7px; padding:0;}
             .sf-bar-btn:hover { background: var(--sf-accent); }
             .sf-bar-btn.active { background: var(--sf-accent); border-color: #fff; }
 
@@ -559,6 +734,17 @@
                 box-shadow: 0 2px 8px rgba(76,175,80,0.4);
             }
             .sf-success-toast.show { opacity: 1; }
+
+            /* 隐藏number input的上下切换按钮 */
+            input[type="number"]::-webkit-inner-spin-button,
+            input[type="number"]::-webkit-outer-spin-button {
+                -webkit-appearance: none;
+                margin: 0;
+            }
+            input[type="number"] {
+                -moz-appearance: textfield;
+            }
+
         `;
         shadow.appendChild(style);
 
@@ -585,6 +771,87 @@
 
         inputWrap.append(input, countDisplay, loadingInd, toast);
 
+        // 雷达定位按钮（使用SVG绘制平面圆形雷达图标）
+        const radarIcon = `<svg width="16" height="16" viewBox="0 0 16 16" style="display:block;">
+            <circle cx="8" cy="8" r="6" fill="none" stroke="currentColor" stroke-width="1.5" opacity="0.8"/>
+            <circle cx="8" cy="8" r="3" fill="none" stroke="currentColor" stroke-width="1.5" opacity="0.6"/>
+            <line x1="8" y1="8" x2="8" y2="2" stroke="currentColor" stroke-width="1.5" opacity="0.8"/>
+            <line x1="8" y1="8" x2="12" y2="8" stroke="currentColor" stroke-width="1.5" opacity="0.8"/>
+            <circle cx="8" cy="8" r="1" fill="currentColor" opacity="0.9"/>
+        </svg>`;
+        const btnRadar = mkBtn(radarIcon, CONFIG.lang === 'zh' ? '定位当前高亮' : 'Locate Highlight', () => {
+            // 检查是否有搜索结果
+            if (!state.ranges || state.ranges.length === 0) {
+                console.log('[Super Find Bar] No search results to locate');
+                return;
+            }
+            
+            // 确保idx有效
+            if (state.idx < 0 || state.idx >= state.ranges.length) {
+                console.log('[Super Find Bar] Invalid index:', state.idx, 'total:', state.ranges.length);
+                return;
+            }
+            
+            const currentRange = state.ranges[state.idx];
+            if (!currentRange || !currentRange.range) {
+                console.log('[Super Find Bar] Invalid range at index:', state.idx);
+                return;
+            }
+            
+            try {
+                const range = currentRange.range;
+                
+                // 先滚动到该位置，确保range可见
+                scrollToRangeImmediate(range);
+                
+                // 等待滚动完成后再显示涟漪
+                setTimeout(() => {
+                    try {
+                        const rect = range.getBoundingClientRect();
+                        let rippleWidth = 40;
+                        let rippleHeight = 40;
+                        let rippleLeft = 0;
+                        let rippleTop = 0;
+                        
+                        if (rect.width === 0 && rect.height === 0) {
+                            // 如果range不可见，尝试获取包含它的元素
+                            const container = range.startContainer.nodeType === Node.TEXT_NODE 
+                                ? range.startContainer.parentElement 
+                                : range.startContainer;
+                            if (container) {
+                                const containerRect = container.getBoundingClientRect();
+                                rippleWidth = Math.max(containerRect.width, 40);
+                                rippleHeight = Math.max(containerRect.height, 40);
+                                rippleLeft = containerRect.left + containerRect.width / 2 - rippleWidth / 2;
+                                rippleTop = containerRect.top + containerRect.height / 2 - rippleHeight / 2;
+                            } else {
+                                console.log('[Super Find Bar] Cannot find container element');
+                                return;
+                            }
+                        } else {
+                            rippleWidth = Math.max(rect.width, 40);
+                            rippleHeight = Math.max(rect.height, 40);
+                            rippleLeft = rect.left + rect.width / 2 - rippleWidth / 2;
+                            rippleTop = rect.top + rect.height / 2 - rippleHeight / 2;
+                        }
+                        
+                        const ripple = document.createElement('div');
+                        ripple.className = 'sf-ripple';
+                        ripple.style.width = rippleWidth + 'px';
+                        ripple.style.height = rippleHeight + 'px';
+                        ripple.style.left = rippleLeft + 'px';
+                        ripple.style.top = rippleTop + 'px';
+                        document.body.appendChild(ripple);
+                        setTimeout(() => ripple.remove(), 1500);
+                    } catch (e) {
+                        console.error('[Super Find Bar] Failed to create ripple:', e);
+                    }
+                }, 100);
+            } catch (e) {
+                console.error('[Super Find Bar] Failed to locate highlight:', e);
+            }
+        }, 'sf-btn-radar');
+        
         const btnPrev = mkBtn('◀', t('titles.prev'), () => go(-1), 'sf-btn-prev');
         const btnNext = mkBtn('▶', t('titles.next'), () => go(1), 'sf-btn-next');
         btnAdv = mkBtn('⚙', t('titles.adv'), (e) => toggleAdv(e), 'sf-btn-adv');
@@ -596,7 +863,7 @@
         }, 'sf-btn-rate');
         const btnClose = mkBtn('✕', t('titles.close'), () => toggle(false), 'sf-btn-close');
 
-        topRow.append(inputWrap, btnPrev, btnNext, btnAdv, btnPin, btnRate, btnClose);
+        topRow.append(inputWrap, btnRadar, btnPrev, btnNext, btnAdv, btnPin, btnRate, btnClose);
 
         const botRow = document.createElement('div');
         botRow.className = 'sf-row-bot';
@@ -667,170 +934,286 @@
         });
     }
 
+    // 创建紧凑的 switch 控件辅助函数
+    function createCompactSwitch(checked, onChange) {
+        const switchWrapper = document.createElement('div');
+        switchWrapper.style.display = 'flex';
+        switchWrapper.style.justifyContent = 'flex-end';
+        switchWrapper.style.width = '28px';
+        
+        const switchLabel = document.createElement('label');
+        switchLabel.className = 'sf-switch-label';
+        switchLabel.style.position = 'relative';
+        switchLabel.style.display = 'inline-block';
+        switchLabel.style.width = '28px';
+        switchLabel.style.height = '16px';
+        
+        const chk = document.createElement('input');
+        chk.type = 'checkbox';
+        chk.checked = checked;
+        chk.style.opacity = '0';
+        chk.style.width = '0';
+        chk.style.height = '0';
+        chk.onchange = onChange;
+        
+        const slider = document.createElement('span');
+        slider.className = 'sf-slider';
+        slider.style.cssText = 'position:absolute;cursor:pointer;top:0;left:0;right:0;bottom:0;background-color:rgba(255,255,255,0.2);transition:.3s;border-radius:16px;';
+        slider.style.background = checked ? 'var(--sf-accent)' : 'rgba(255,255,255,0.2)';
+        
+        const sliderBefore = document.createElement('span');
+        sliderBefore.style.cssText = 'position:absolute;content:"";height:12px;width:12px;left:2px;bottom:2px;background-color:white;transition:.3s;border-radius:50%;box-shadow:0 1px 2px rgba(0,0,0,0.2);';
+        sliderBefore.style.transform = checked ? 'translateX(12px)' : 'translateX(0)';
+        
+        chk.addEventListener('change', () => {
+            slider.style.background = chk.checked ? 'var(--sf-accent)' : 'rgba(255,255,255,0.2)';
+            sliderBefore.style.transform = chk.checked ? 'translateX(12px)' : 'translateX(0)';
+        });
+        
+        slider.appendChild(sliderBefore);
+        switchLabel.append(chk, slider);
+        switchWrapper.appendChild(switchLabel);
+        return { wrapper: switchWrapper, checkbox: chk };
+    }
+
     function renderAdvPanel() {
         advPanel.innerHTML = '';
         const grid = document.createElement('div');
         grid.className = 'sf-grid';
 
-        // Group 1: Toolbar
+        // Group 1: 搜索选项设置（工具栏显示）- 按照 options 页面顺序
         const grpTools = document.createElement('div');
-        grpTools.innerHTML = `<div class="sf-group-title">${t('group.tool')}</div>`;
-        const toolList = ['regex', 'includeHidden', 'fuzzy', 'matchCase', 'wholeWord', 'ignoreAccents', 'highlightAll'];
+        const toolTitle = document.createElement('div');
+        toolTitle.className = 'sf-group-title';
+        toolTitle.style.display = 'flex';
+        toolTitle.style.justifyContent = 'space-between';
+        toolTitle.style.alignItems = 'center';
+        const titleText = document.createElement('span');
+        titleText.textContent = CONFIG.lang === 'zh' ? '搜索选项设置' : 'Search Options';
+        const headerLabel = document.createElement('span');
+        headerLabel.textContent = CONFIG.lang === 'zh' ? '显示在工具栏' : 'Show in Toolbar';
+        toolTitle.append(titleText, headerLabel);
+        grpTools.appendChild(toolTitle);
+        
+        // 按照 options 页面顺序：matchCase, wholeWord, ignoreAccents, highlightAll, regex, includeHidden, fuzzy
+        const toolList = ['matchCase', 'wholeWord', 'ignoreAccents', 'highlightAll', 'regex', 'includeHidden', 'fuzzy'];
         toolList.forEach(key => {
             const row = document.createElement('div');
             row.className = 'sf-adv-row';
             const lbl = document.createElement('span');
             lbl.className = 'sf-adv-lbl';
             lbl.textContent = t(`opts.${key}`);
-            const chk = document.createElement('input');
-            chk.type = 'checkbox';
-            chk.checked = CONFIG.search.pinned.includes(key);
-            chk.onchange = (e) => {
+            lbl.style.flex = '1';
+            
+            const switchCtrl = createCompactSwitch(CONFIG.search.pinned.includes(key), (e) => {
                 if (e.target.checked) {
                     if (!CONFIG.search.pinned.includes(key)) {
                         CONFIG.search.pinned.push(key);
-                        // 添加到工具栏时，默认设为不勾选状态
                         CONFIG.search[key] = false;
                     }
                 } else {
                     CONFIG.search.pinned = CONFIG.search.pinned.filter(k => k !== key);
-                    // 从工具栏移除时，也清除勾选状态
                     CONFIG.search[key] = false;
                 }
-                saveSessionConfig(); // 使用会话存储，不持久化
+                saveSessionConfig();
+                showSuccessToast(t('saved'));
                 renderCheckboxes(chkGroup);
-            };
-            row.append(lbl, chk);
+                // 实时更新搜索结果：如果有搜索词，立即触发搜索
+                if (input.value && input.value.trim() && !CONFIG.search.fuzzy && !state.manualMode) {
+                    triggerSearch();
+                }
+                // 如果是模糊搜索，需要重新渲染以显示/隐藏容错字符数
+                if (key === 'fuzzy') {
+                    renderAdvPanel();
+                }
+            });
+            
+            row.append(lbl, switchCtrl.wrapper);
             grpTools.append(row);
+            
+            // 容错字符数（作为模糊搜索的子项，只有模糊搜索在工具栏中时才显示）
+            if (key === 'fuzzy' && CONFIG.search.pinned.includes('fuzzy')) {
+                const fuzzyToleranceRow = document.createElement('div');
+                fuzzyToleranceRow.className = 'sf-adv-row';
+                fuzzyToleranceRow.style.paddingLeft = '16px';
+                fuzzyToleranceRow.style.marginTop = '2px';
+                const toleranceLabel = document.createElement('span');
+                toleranceLabel.className = 'sf-adv-lbl';
+                toleranceLabel.textContent = CONFIG.lang === 'zh' ? '容错字符数' : 'Tolerance';
+                toleranceLabel.style.fontSize = '10px';
+                
+                const toleranceControl = document.createElement('div');
+                toleranceControl.style.display = 'flex';
+                toleranceControl.style.alignItems = 'center';
+                toleranceControl.style.gap = '6px';
+                
+                const fuzzyRange = document.createElement('input');
+                fuzzyRange.type = 'range';
+                fuzzyRange.min = '0';
+                fuzzyRange.max = '5';
+                fuzzyRange.step = '1';
+                fuzzyRange.value = CONFIG.search.fuzzyTolerance;
+                fuzzyRange.style.width = '60px';
+                fuzzyRange.style.height = '3px';
+                fuzzyRange.oninput = (e) => {
+                    CONFIG.search.fuzzyTolerance = parseInt(e.target.value);
+                    toleranceValue.textContent = CONFIG.search.fuzzyTolerance;
+                    saveSessionConfig();
+                    showSuccessToast(t('saved'));
+                };
+                
+            const toleranceValue = document.createElement('span');
+            toleranceValue.textContent = CONFIG.search.fuzzyTolerance;
+            toleranceValue.style.minWidth = '14px';
+            toleranceValue.style.textAlign = 'center';
+            toleranceValue.style.fontSize = '9px';
+                
+                toleranceControl.append(fuzzyRange, toleranceValue);
+                fuzzyToleranceRow.append(toleranceLabel, toleranceControl);
+                grpTools.append(fuzzyToleranceRow);
+            }
         });
 
-        // Group 2: Search Settings
+        // Group 2: 搜索设置
         const grpSearch = document.createElement('div');
-        grpSearch.innerHTML = `<div class="sf-group-title">${t('group.search')}</div>`;
+        const searchTitle = document.createElement('div');
+        searchTitle.className = 'sf-group-title';
+        searchTitle.textContent = CONFIG.lang === 'zh' ? '搜索设置' : 'Search Settings';
+        grpSearch.appendChild(searchTitle);
 
-        // 模糊搜索开关（与其他工具栏选项一致）
-        const fuzzySwitchRow = document.createElement('div');
-        fuzzySwitchRow.className = 'sf-adv-row';
-        const fuzzyLbl = document.createElement('span');
-        fuzzyLbl.className = 'sf-adv-lbl';
-        fuzzyLbl.textContent = t('opts.fuzzy');
-        const fuzzyChk = document.createElement('input');
-        fuzzyChk.type = 'checkbox';
-        fuzzyChk.checked = CONFIG.search.fuzzy;
-        fuzzyChk.onchange = (e) => {
-            CONFIG.search.fuzzy = e.target.checked;
-            saveConfig();
-            showSuccessToast(t('saved'));
-        };
-        fuzzySwitchRow.append(fuzzyLbl, fuzzyChk);
-
-        // 容错字符数（紧凑布局，参考图片）
-        const fuzzyToleranceRow = document.createElement('div');
-        fuzzyToleranceRow.className = 'sf-adv-row';
-        fuzzyToleranceRow.style.marginTop = '4px';
-        fuzzyToleranceRow.style.paddingLeft = '12px';
-        fuzzyToleranceRow.style.fontSize = '12px';
-        const toleranceLabel = document.createElement('span');
-        toleranceLabel.textContent = CONFIG.lang === 'zh' ? '容错字符数' : 'Tolerance';
-        toleranceLabel.style.marginRight = 'auto';
-        
-        const toleranceControl = document.createElement('div');
-        toleranceControl.style.display = 'flex';
-        toleranceControl.style.alignItems = 'center';
-        toleranceControl.style.gap = '8px';
-        
-        const fuzzyRange = document.createElement('input');
-        fuzzyRange.type = 'range';
-        fuzzyRange.min = '0';
-        fuzzyRange.max = '5';
-        fuzzyRange.step = '1';
-        fuzzyRange.value = CONFIG.search.fuzzyTolerance;
-        fuzzyRange.style.width = '80px';
-        fuzzyRange.oninput = (e) => {
-            CONFIG.search.fuzzyTolerance = parseInt(e.target.value);
-            toleranceValue.textContent = CONFIG.search.fuzzyTolerance;
-            saveConfig();
-            showSuccessToast(t('saved'));
-        };
-        
-        const toleranceValue = document.createElement('span');
-        toleranceValue.textContent = CONFIG.search.fuzzyTolerance;
-        toleranceValue.style.minWidth = '20px';
-        toleranceValue.style.textAlign = 'center';
-        
-        toleranceControl.append(fuzzyRange, toleranceValue);
-        fuzzyToleranceRow.append(toleranceLabel, toleranceControl);
-
-        // Performance Threshold
+        // 自动搜索阈值
         const perfRow = document.createElement('div');
         perfRow.className = 'sf-adv-row';
-        perfRow.style.marginTop = '8px';
-        perfRow.innerHTML = `<span class="sf-adv-lbl">${t('lbl.perf')}</span>`;
+        const perfLbl = document.createElement('span');
+        perfLbl.className = 'sf-adv-lbl';
+        perfLbl.textContent = t('lbl.perf');
 
         const perfCtrl = document.createElement('div');
-        perfCtrl.style.display = 'flex'; perfCtrl.style.gap = '4px'; perfCtrl.style.marginLeft = 'auto';
+        perfCtrl.style.display = 'flex';
+        perfCtrl.style.gap = '4px';
+        perfCtrl.style.marginLeft = 'auto';
 
         const perfInp = document.createElement('input');
-        perfInp.type = 'number'; perfInp.value = CONFIG.search.perfThreshold;
-        perfInp.style.width = '60px'; perfInp.style.background = 'rgba(255,255,255,0.1)'; perfInp.style.border = 'none'; perfInp.style.color='inherit'; perfInp.style.borderRadius='4px'; perfInp.style.padding='2px';
+        perfInp.type = 'number';
+        perfInp.value = CONFIG.search.perfThreshold;
+        perfInp.style.width = '45px';
+        perfInp.style.height = '18px';
+        perfInp.style.background = 'rgba(255,255,255,0.1)';
+        perfInp.style.border = 'none';
+        perfInp.style.color = 'inherit';
+        perfInp.style.borderRadius = '3px';
+        perfInp.style.padding = '1px 3px';
+        perfInp.style.fontSize = '9px';
         perfInp.onchange = (e) => {
             let v = parseInt(e.target.value);
             if(isNaN(v) || v < 0) v = 3000;
             CONFIG.search.perfThreshold = v;
-            saveConfig();
+            saveSessionConfig();
             showSuccessToast(t('saved'));
         };
 
-        // 性能阈值重置按钮（环形箭头）
         const btnResetPerf = document.createElement('button');
         btnResetPerf.innerHTML = '↺';
         btnResetPerf.title = CONFIG.lang === 'zh' ? '重置为默认' : 'Reset to Default';
-        btnResetPerf.style.cssText = 'width:28px;height:28px;padding:0;font-size:16px;border-radius:50%;border:1px solid rgba(255,255,255,0.3);background:rgba(255,255,255,0.1);cursor:pointer;display:flex;align-items:center;justify-content:center;';
+        btnResetPerf.style.cssText = 'width:18px;height:18px;padding:0;font-size:10px;border-radius:50%;border:1px solid rgba(255,255,255,0.3);background:rgba(255,255,255,0.1);cursor:pointer;display:flex;align-items:center;justify-content:center;';
         btnResetPerf.onmouseover = () => btnResetPerf.style.background = 'rgba(255,255,255,0.2)';
         btnResetPerf.onmouseout = () => btnResetPerf.style.background = 'rgba(255,255,255,0.1)';
-        btnResetPerf.onclick = () => {
-            CONFIG.search.perfThreshold = DEFAULT_CONFIG.search.perfThreshold;
-            perfInp.value = CONFIG.search.perfThreshold;
-            saveConfig();
-            showSuccessToast(t('saved'));
+        btnResetPerf.onclick = async () => {
+            try {
+                const defaultConfig = await chrome.storage.sync.get(STORAGE_KEY);
+                const defaultPerfThreshold = defaultConfig[STORAGE_KEY]?.search?.perfThreshold || DEFAULT_CONFIG.search.perfThreshold;
+                CONFIG.search.perfThreshold = defaultPerfThreshold;
+                perfInp.value = CONFIG.search.perfThreshold;
+                saveSessionConfig();
+                showSuccessToast(t('saved'));
+            } catch (e) {
+                console.error('[Super Find Bar] Failed to reset perf threshold:', e);
+            }
         };
 
         perfCtrl.append(perfInp, btnResetPerf);
-        perfRow.append(perfCtrl);
+        perfRow.append(perfLbl, perfCtrl);
+        grpSearch.appendChild(perfRow);
 
-        // 多词颜色方案设置（8列：7色块 + 重置按钮）
-        const colorSchemeRow = document.createElement('div');
-        colorSchemeRow.style.marginTop = '12px';
-        const colorTitle = document.createElement('div');
-        colorTitle.className = 'sf-adv-lbl';
-        colorTitle.textContent = CONFIG.lang === 'zh' ? '多词颜色方案 (最多7词)' : 'Multi-term Colors (Max 7)';
-        colorTitle.style.marginBottom = '8px';
-        colorSchemeRow.appendChild(colorTitle);
+        // 滚动行为
+        const scrollRow = document.createElement('div');
+        scrollRow.className = 'sf-adv-row';
+        const scrollLbl = document.createElement('span');
+        scrollLbl.className = 'sf-adv-lbl';
+        scrollLbl.textContent = CONFIG.lang === 'zh' ? '滚动行为' : 'Scroll Behavior';
+        
+        const scrollCtrl = document.createElement('div');
+        scrollCtrl.style.display = 'flex';
+        scrollCtrl.style.gap = '8px';
+        scrollCtrl.style.marginLeft = 'auto';
+        
+        // 确保有默认值
+        if (!CONFIG.scroll.behavior) {
+            CONFIG.scroll.behavior = 'always-center';
+        }
+        
+        const scrollAlways = document.createElement('label');
+        scrollAlways.style.display = 'flex';
+        scrollAlways.style.alignItems = 'center';
+        scrollAlways.style.gap = '3px';
+        scrollAlways.style.fontSize = '10px';
+        scrollAlways.style.cursor = 'pointer';
+        const radioAlways = document.createElement('input');
+        radioAlways.type = 'radio';
+        radioAlways.name = 'scroll-behavior-adv';
+        radioAlways.value = 'always-center';
+        radioAlways.checked = CONFIG.scroll.behavior === 'always-center';
+        radioAlways.style.width = '10px';
+        radioAlways.style.height = '10px';
+        radioAlways.onchange = () => {
+            CONFIG.scroll.behavior = 'always-center';
+            saveSessionConfig();
+            showSuccessToast(t('saved'));
+        };
+        scrollAlways.append(radioAlways, document.createTextNode(CONFIG.lang === 'zh' ? '始终居中' : 'Always Center'));
+        
+        const scrollHidden = document.createElement('label');
+        scrollHidden.style.display = 'flex';
+        scrollHidden.style.alignItems = 'center';
+        scrollHidden.style.gap = '3px';
+        scrollHidden.style.fontSize = '10px';
+        scrollHidden.style.cursor = 'pointer';
+        const radioHidden = document.createElement('input');
+        radioHidden.type = 'radio';
+        radioHidden.name = 'scroll-behavior-adv';
+        radioHidden.value = 'only-when-hidden';
+        radioHidden.checked = CONFIG.scroll.behavior === 'only-when-hidden';
+        radioHidden.style.width = '10px';
+        radioHidden.style.height = '10px';
+        radioHidden.onchange = () => {
+            CONFIG.scroll.behavior = 'only-when-hidden';
+            saveSessionConfig();
+            showSuccessToast(t('saved'));
+        };
+        scrollHidden.append(radioHidden, document.createTextNode(CONFIG.lang === 'zh' ? '仅不可见时' : 'Only When Hidden'));
+        
+        scrollCtrl.append(scrollAlways, scrollHidden);
+        scrollRow.append(scrollLbl, scrollCtrl);
+        grpSearch.appendChild(scrollRow);
 
+        // 多词颜色方案
+        const colorRow = document.createElement('div');
+        colorRow.className = 'sf-adv-row';
+        const colorLbl = document.createElement('span');
+        colorLbl.className = 'sf-adv-lbl';
+        colorLbl.textContent = CONFIG.lang === 'zh' ? '多词颜色方案' : 'Multi-term Colors';
+        
         const colorGrid = document.createElement('div');
-        colorGrid.style.display = 'grid';
-        colorGrid.style.gridTemplateColumns = 'repeat(8, 1fr)';
-        colorGrid.style.gap = '6px';
-        colorGrid.style.marginBottom = '8px';
+        colorGrid.style.display = 'flex';
+        colorGrid.style.gap = '2px';
         colorGrid.style.alignItems = 'center';
-
+        
         CONFIG.colors.forEach((color, idx) => {
-            const colorWrap = document.createElement('div');
-            colorWrap.style.display = 'flex';
-            colorWrap.style.flexDirection = 'column';
-            colorWrap.style.alignItems = 'center';
-            
-            // 圆形颜色选择器（与 options.html 一致）
             const colorCircle = document.createElement('div');
-            colorCircle.style.cssText = 'width:28px;height:28px;border-radius:50%;border:2px solid rgba(255,255,255,0.25);overflow:hidden;cursor:pointer;position:relative;transition:transform 0.2s;';
-            colorCircle.onmouseover = () => {
-                colorCircle.style.transform = 'scale(1.1)';
-                colorCircle.style.borderColor = 'rgba(255,255,255,0.4)';
-            };
-            colorCircle.onmouseout = () => {
-                colorCircle.style.transform = 'scale(1)';
-                colorCircle.style.borderColor = 'rgba(255,255,255,0.25)';
-            };
+            colorCircle.style.cssText = 'width:16px;height:16px;border-radius:50%;border:1px solid rgba(255,255,255,0.3);overflow:hidden;cursor:pointer;position:relative;';
+            colorCircle.title = `${idx + 1}`;
+            colorCircle.onmouseover = () => colorCircle.style.borderColor = 'rgba(255,255,255,0.5)';
+            colorCircle.onmouseout = () => colorCircle.style.borderColor = 'rgba(255,255,255,0.3)';
             
             const colorInp = document.createElement('input');
             colorInp.type = 'color';
@@ -838,256 +1221,322 @@
             colorInp.style.cssText = 'position:absolute;top:-50%;left:-50%;width:200%;height:200%;border:none;padding:0;margin:0;cursor:pointer;';
             colorInp.onchange = (e) => {
                 CONFIG.colors[idx] = e.target.value;
-                saveConfig();
-                updateColorStyles();
+                saveSessionConfig();
                 showSuccessToast(t('saved'));
+                updateColorStyles();
             };
-            
             colorCircle.appendChild(colorInp);
-            
-            const colorLabel = document.createElement('div');
-            colorLabel.textContent = idx + 1;
-            colorLabel.style.fontSize = '9px';
-            colorLabel.style.marginTop = '2px';
-            colorLabel.style.opacity = '0.7';
-            
-            colorWrap.append(colorCircle, colorLabel);
-            colorGrid.appendChild(colorWrap);
+            colorGrid.appendChild(colorCircle);
         });
-
-        const resetWrap = document.createElement('div');
-        resetWrap.style.display = 'flex';
-        resetWrap.style.flexDirection = 'column';
-        resetWrap.style.alignItems = 'center';
-        resetWrap.style.justifyContent = 'center';
         
-        // 颜色重置按钮（环形箭头，统一样式）
         const btnResetColors = document.createElement('button');
         btnResetColors.innerHTML = '↺';
         btnResetColors.title = CONFIG.lang === 'zh' ? '重置为默认' : 'Reset Colors';
-        btnResetColors.style.cssText = 'width:36px;height:36px;padding:0;font-size:18px;border-radius:50%;border:2px solid rgba(255,255,255,0.25);background:rgba(255,255,255,0.1);cursor:pointer;display:flex;align-items:center;justify-content:center;transition:transform 0.2s;';
-        btnResetColors.onmouseover = () => {
-            btnResetColors.style.transform = 'scale(1.1)';
-            btnResetColors.style.borderColor = 'rgba(255,255,255,0.4)';
+        btnResetColors.style.cssText = 'width:18px;height:18px;padding:0;font-size:9px;border-radius:50%;border:1px solid rgba(255,255,255,0.3);background:rgba(255,255,255,0.1);cursor:pointer;display:flex;align-items:center;justify-content:center;';
+        btnResetColors.onmouseover = () => btnResetColors.style.background = 'rgba(255,255,255,0.2)';
+        btnResetColors.onmouseout = () => btnResetColors.style.background = 'rgba(255,255,255,0.1)';
+        btnResetColors.onclick = async () => {
+            try {
+                const defaultConfig = await chrome.storage.sync.get(STORAGE_KEY);
+                const defaultColors = defaultConfig[STORAGE_KEY]?.colors || DEFAULT_CONFIG.colors;
+                CONFIG.colors = [...defaultColors];
+                saveSessionConfig();
+                showSuccessToast(t('saved'));
+                updateColorStyles();
+                renderAdvPanel();
+            } catch (e) {
+                console.error('[Super Find Bar] Failed to reset colors:', e);
+            }
         };
-        btnResetColors.onmouseout = () => {
-            btnResetColors.style.transform = 'scale(1)';
-            btnResetColors.style.borderColor = 'rgba(255,255,255,0.25)';
-        };
-        btnResetColors.onclick = () => {
-            CONFIG.colors = [...DEFAULT_CONFIG.colors];
-            saveConfig();
-            updateColorStyles();
-            renderAdvPanel();
-            showSuccessToast(t('saved'));
-        };
+        colorGrid.appendChild(btnResetColors);
         
-        const resetLabel = document.createElement('div');
-        resetLabel.textContent = CONFIG.lang === 'zh' ? '重置' : 'Reset';
-        resetLabel.style.fontSize = '9px';
-        resetLabel.style.marginTop = '2px';
-        resetLabel.style.opacity = '0.6';
-        
-        resetWrap.append(btnResetColors, resetLabel);
-        colorGrid.appendChild(resetWrap);
+        colorRow.append(colorLbl, colorGrid);
+        grpSearch.appendChild(colorRow);
 
-        colorSchemeRow.append(colorGrid);
-
-        grpSearch.append(fuzzySwitchRow, fuzzyToleranceRow, perfRow, colorSchemeRow);
-
-        // Group 3: Layout
+        // Group 3: 外观和布局
         const grpLayout = document.createElement('div');
-        grpLayout.innerHTML = `<div class="sf-group-title">${t('group.layout')}</div>`;
+        const layoutTitle = document.createElement('div');
+        layoutTitle.className = 'sf-group-title';
+        layoutTitle.textContent = CONFIG.lang === 'zh' ? '外观和布局' : 'Appearance & Layout';
+        grpLayout.appendChild(layoutTitle);
 
-        // 放大镜按钮开关
+        // 坐标轴位置
+        const coordRow = document.createElement('div');
+        coordRow.className = 'sf-adv-row';
+        const coordLbl = document.createElement('span');
+        coordLbl.className = 'sf-adv-lbl';
+        coordLbl.textContent = CONFIG.lang === 'zh' ? '坐标轴位置' : 'Axis Position';
+        
+        const coordCtrl = document.createElement('div');
+        coordCtrl.style.display = 'flex';
+        coordCtrl.style.flexDirection = 'column';
+        coordCtrl.style.gap = '4px';
+        coordCtrl.style.marginLeft = 'auto';
+        
+        // X 轴位置（包含显示开关）
+        const xAxisCtrl = document.createElement('div');
+        xAxisCtrl.style.display = 'flex';
+        xAxisCtrl.style.gap = '6px';
+        xAxisCtrl.style.alignItems = 'center';
+        const xAxisLabel = document.createElement('span');
+        xAxisLabel.textContent = CONFIG.lang === 'zh' ? 'X轴:' : 'X:';
+        xAxisLabel.style.fontSize = '9px';
+        xAxisLabel.style.minWidth = '28px'; // 与Y轴标签对齐
+        const xAxisTop = document.createElement('label');
+        xAxisTop.style.display = 'flex';
+        xAxisTop.style.alignItems = 'center';
+        xAxisTop.style.gap = '2px';
+        xAxisTop.style.fontSize = '9px';
+        xAxisTop.style.cursor = 'pointer';
+        const radioXTop = document.createElement('input');
+        radioXTop.type = 'radio';
+        radioXTop.name = 'x-axis-adv';
+        radioXTop.value = 'top';
+        radioXTop.checked = CONFIG.coordinates.xPosition === 'top';
+        radioXTop.style.width = '9px';
+        radioXTop.style.height = '9px';
+        radioXTop.onchange = () => {
+            CONFIG.coordinates.xPosition = 'top';
+            saveSessionConfig();
+            updateTickBarPositions();
+        };
+        xAxisTop.append(radioXTop, document.createTextNode(CONFIG.lang === 'zh' ? '顶部' : 'Top'));
+        const xAxisBottom = document.createElement('label');
+        xAxisBottom.style.display = 'flex';
+        xAxisBottom.style.alignItems = 'center';
+        xAxisBottom.style.gap = '2px';
+        xAxisBottom.style.fontSize = '9px';
+        xAxisBottom.style.cursor = 'pointer';
+        const radioXBottom = document.createElement('input');
+        radioXBottom.type = 'radio';
+        radioXBottom.name = 'x-axis-adv';
+        radioXBottom.value = 'bottom';
+        radioXBottom.checked = CONFIG.coordinates.xPosition === 'bottom';
+        radioXBottom.style.width = '9px';
+        radioXBottom.style.height = '9px';
+        radioXBottom.onchange = () => {
+            CONFIG.coordinates.xPosition = 'bottom';
+            saveSessionConfig();
+            showSuccessToast(t('saved'));
+            updateTickBarPositions();
+        };
+        xAxisBottom.append(radioXBottom, document.createTextNode(CONFIG.lang === 'zh' ? '底部' : 'Bottom'));
+        // X轴显示开关（放在底部选项后面）
+        const xAxisShowSwitch = createCompactSwitch(CONFIG.coordinates.showXAxis, (e) => {
+            CONFIG.coordinates.showXAxis = e.target.checked;
+            saveSessionConfig();
+            showSuccessToast(t('saved'));
+            drawTickBar();
+        });
+        xAxisCtrl.append(xAxisLabel, xAxisTop, xAxisBottom, xAxisShowSwitch.wrapper);
+        
+        // Y 轴位置（包含显示开关）
+        const yAxisCtrl = document.createElement('div');
+        yAxisCtrl.style.display = 'flex';
+        yAxisCtrl.style.gap = '6px';
+        yAxisCtrl.style.alignItems = 'center';
+        const yAxisLabel = document.createElement('span');
+        yAxisLabel.textContent = CONFIG.lang === 'zh' ? 'Y轴:' : 'Y:';
+        yAxisLabel.style.fontSize = '9px';
+        yAxisLabel.style.minWidth = '28px'; // 与X轴标签对齐
+        const yAxisLeft = document.createElement('label');
+        yAxisLeft.style.display = 'flex';
+        yAxisLeft.style.alignItems = 'center';
+        yAxisLeft.style.gap = '2px';
+        yAxisLeft.style.fontSize = '9px';
+        yAxisLeft.style.cursor = 'pointer';
+        const radioYLeft = document.createElement('input');
+        radioYLeft.type = 'radio';
+        radioYLeft.name = 'y-axis-adv';
+        radioYLeft.value = 'left';
+        radioYLeft.checked = CONFIG.coordinates.yPosition === 'left';
+        radioYLeft.style.width = '9px';
+        radioYLeft.style.height = '9px';
+        radioYLeft.onchange = () => {
+            CONFIG.coordinates.yPosition = 'left';
+            saveSessionConfig();
+            showSuccessToast(t('saved'));
+            updateTickBarPositions();
+        };
+        yAxisLeft.append(radioYLeft, document.createTextNode(CONFIG.lang === 'zh' ? '左侧' : 'Left'));
+        const yAxisRight = document.createElement('label');
+        yAxisRight.style.display = 'flex';
+        yAxisRight.style.alignItems = 'center';
+        yAxisRight.style.gap = '2px';
+        yAxisRight.style.fontSize = '9px';
+        yAxisRight.style.cursor = 'pointer';
+        const radioYRight = document.createElement('input');
+        radioYRight.type = 'radio';
+        radioYRight.name = 'y-axis-adv';
+        radioYRight.value = 'right';
+        radioYRight.checked = CONFIG.coordinates.yPosition === 'right';
+        radioYRight.style.width = '9px';
+        radioYRight.style.height = '9px';
+        radioYRight.onchange = () => {
+            CONFIG.coordinates.yPosition = 'right';
+            saveSessionConfig();
+            showSuccessToast(t('saved'));
+            updateTickBarPositions();
+        };
+        yAxisRight.append(radioYRight, document.createTextNode(CONFIG.lang === 'zh' ? '右侧' : 'Right'));
+        // Y轴显示开关（放在右侧选项后面）
+        const yAxisShowSwitch = createCompactSwitch(CONFIG.coordinates.showYAxis, (e) => {
+            CONFIG.coordinates.showYAxis = e.target.checked;
+            saveSessionConfig();
+            showSuccessToast(t('saved'));
+            drawTickBar();
+        });
+        yAxisCtrl.append(yAxisLabel, yAxisLeft, yAxisRight, yAxisShowSwitch.wrapper);
+        
+        coordCtrl.append(xAxisCtrl, yAxisCtrl);
+        coordRow.append(coordLbl, coordCtrl);
+        grpLayout.appendChild(coordRow);
+
+        // 窗口位置
+        const layoutRow = document.createElement('div');
+        layoutRow.className = 'sf-adv-row';
+        const layoutLbl = document.createElement('span');
+        layoutLbl.className = 'sf-adv-lbl';
+        layoutLbl.textContent = CONFIG.lang === 'zh' ? '窗口位置' : 'Window Position';
+        
+        const positionGrid = document.createElement('div');
+        positionGrid.style.display = 'grid';
+        positionGrid.style.gridTemplateColumns = '15px 15px minmax(50px, 1fr)';
+        positionGrid.style.gridTemplateRows = 'repeat(2, 15px)';
+        positionGrid.style.gap = '2px';
+        
+        const btnTL = document.createElement('div');
+        btnTL.className = `sf-mini-btn ${CONFIG.layout.position === 'top-left' ? 'active' : ''}`;
+        btnTL.title = CONFIG.lang === 'zh' ? '左上角' : 'Top Left';
+        btnTL.onclick = () => setPos('top-left', 'float');
+        const btnTR = document.createElement('div');
+        btnTR.className = `sf-mini-btn ${CONFIG.layout.position === 'top-right' ? 'active' : ''}`;
+        btnTR.title = CONFIG.lang === 'zh' ? '右上角' : 'Top Right';
+        btnTR.onclick = () => setPos('top-right', 'float');
+        const btnTop = document.createElement('div');
+        btnTop.className = `sf-bar-btn ${CONFIG.layout.position === 'top' ? 'active' : ''}`;
+        btnTop.textContent = CONFIG.lang === 'zh' ? '顶部' : 'TOP';
+        btnTop.title = CONFIG.lang === 'zh' ? '顶部横条' : 'Top Bar';
+        btnTop.style.fontSize = '7px';
+        btnTop.style.fontWeight = '500';
+        btnTop.onclick = () => setPos('top', 'bar');
+        const btnBL = document.createElement('div');
+        btnBL.className = `sf-mini-btn ${CONFIG.layout.position === 'bottom-left' ? 'active' : ''}`;
+        btnBL.title = CONFIG.lang === 'zh' ? '左下角' : 'Bottom Left';
+        btnBL.onclick = () => setPos('bottom-left', 'float');
+        const btnBR = document.createElement('div');
+        btnBR.className = `sf-mini-btn ${CONFIG.layout.position === 'bottom-right' ? 'active' : ''}`;
+        btnBR.title = CONFIG.lang === 'zh' ? '右下角' : 'Bottom Right';
+        btnBR.onclick = () => setPos('bottom-right', 'float');
+        const btnBot = document.createElement('div');
+        btnBot.className = `sf-bar-btn ${CONFIG.layout.position === 'bottom' ? 'active' : ''}`;
+        btnBot.textContent = CONFIG.lang === 'zh' ? '底部' : 'BOT';
+        btnBot.title = CONFIG.lang === 'zh' ? '底部横条' : 'Bottom Bar';
+        btnBot.style.fontSize = '7px';
+        btnBot.style.fontWeight = '500';
+        btnBot.onclick = () => setPos('bottom', 'bar');
+        
+        positionGrid.append(btnTL, btnTR, btnTop, btnBL, btnBR, btnBot);
+        layoutRow.append(layoutLbl, positionGrid);
+        grpLayout.appendChild(layoutRow);
+
+        // 显示右下角放大镜
         const launchBtnRow = document.createElement('div');
         launchBtnRow.className = 'sf-adv-row';
         const launchBtnLbl = document.createElement('span');
         launchBtnLbl.className = 'sf-adv-lbl';
         launchBtnLbl.textContent = CONFIG.lang === 'zh' ? '显示右下角放大镜' : 'Show Launch Button';
-        const launchBtnChk = document.createElement('input');
-        launchBtnChk.type = 'checkbox';
-        launchBtnChk.checked = CONFIG.layout.showLaunchBtn;
-        launchBtnChk.onchange = (e) => {
+        const launchBtnSwitch = createCompactSwitch(CONFIG.layout.showLaunchBtn, (e) => {
             CONFIG.layout.showLaunchBtn = e.target.checked;
-            saveConfig();
+            saveSessionConfig();
+            showSuccessToast(t('saved'));
             initLaunchBtn();
+        });
+        launchBtnRow.append(launchBtnLbl, launchBtnSwitch.wrapper);
+        grpLayout.appendChild(launchBtnRow);
+
+        // 主题颜色
+        const themeRow = document.createElement('div');
+        themeRow.className = 'sf-adv-row';
+        const themeLbl = document.createElement('span');
+        themeLbl.className = 'sf-adv-lbl';
+        themeLbl.textContent = CONFIG.lang === 'zh' ? '主题颜色' : 'Theme Colors';
+        
+        const themeCtrl = document.createElement('div');
+        themeCtrl.style.display = 'flex';
+        themeCtrl.style.gap = '4px';
+        themeCtrl.style.alignItems = 'center';
+        
+        const bgLabel = document.createElement('span');
+        bgLabel.textContent = CONFIG.lang === 'zh' ? '背景' : 'BG';
+        bgLabel.style.fontSize = '9px';
+        const bgInp = document.createElement('input');
+        bgInp.type = 'color';
+        bgInp.value = CONFIG.theme.bg;
+        bgInp.style.cssText = 'width:16px;height:16px;border:none;padding:0;cursor:pointer;border-radius:3px;';
+        bgInp.onchange = e => {
+            CONFIG.theme.bg = e.target.value;
+            applyTheme();
+            saveSessionConfig();
             showSuccessToast(t('saved'));
         };
-        launchBtnRow.append(launchBtnLbl, launchBtnChk);
-
-        // Lang Switch
-        const langRow = document.createElement('div');
-        langRow.className = 'sf-adv-row';
-        langRow.innerHTML = `<span class="sf-adv-lbl">${t('lbl.lang')}</span>`;
-        const langSwitch = document.createElement('div');
-        langSwitch.className = 'sf-lang-switch';
-
-        const optZh = document.createElement('div'); optZh.className = `sf-lang-opt ${CONFIG.lang === 'zh' ? 'active' : ''}`;
-        optZh.textContent = '中文';
-        optZh.onclick = () => switchLang('zh');
-
-        const optEn = document.createElement('div'); optEn.className = `sf-lang-opt ${CONFIG.lang === 'en' ? 'active' : ''}`;
-        optEn.textContent = 'EN';
-        optEn.onclick = () => switchLang('en');
-
-        langSwitch.append(optZh, optEn);
-        langRow.appendChild(langSwitch);
-
-        // 窗口位置控制布局
-        const layoutRow = document.createElement('div');
-        layoutRow.style.display = 'flex';
-        layoutRow.style.alignItems = 'center';
-        layoutRow.style.justifyContent = 'space-between';
-        layoutRow.style.gap = '12px';
-        layoutRow.style.marginTop = '8px';
-
-        const layoutLabel = document.createElement('div');
-        layoutLabel.style.fontSize = '13px';
-        layoutLabel.style.whiteSpace = 'nowrap';
-        layoutLabel.textContent = CONFIG.lang === 'zh' ? '窗口位置' : 'Position';
-
-        const positionGrid = document.createElement('div');
-        positionGrid.style.display = 'grid';
-        positionGrid.style.gridTemplateColumns = 'repeat(3, 28px)';
-        positionGrid.style.gridTemplateRows = 'repeat(2, 24px)';
-        positionGrid.style.gap = '4px';
-
-        const btnTL = document.createElement('div');
-        btnTL.className = `sf-mini-btn ${CONFIG.layout.position === 'top-left' ? 'active' : ''}`;
-        btnTL.title = CONFIG.lang === 'zh' ? '左上角' : 'Top Left';
-        btnTL.onclick = () => setPos('top-left', 'float');
-
-        const btnTR = document.createElement('div');
-        btnTR.className = `sf-mini-btn ${CONFIG.layout.position === 'top-right' ? 'active' : ''}`;
-        btnTR.title = CONFIG.lang === 'zh' ? '右上角' : 'Top Right';
-        btnTR.onclick = () => setPos('top-right', 'float');
-
-        const btnTop = document.createElement('div');
-        btnTop.className = `sf-bar-btn ${CONFIG.layout.position === 'top' ? 'active' : ''}`;
-        btnTop.textContent = 'TOP';
-        btnTop.title = CONFIG.lang === 'zh' ? '顶部横条' : 'Top Bar';
-        btnTop.style.fontSize = '9px';
-        btnTop.onclick = () => setPos('top', 'bar');
-
-        const btnBL = document.createElement('div');
-        btnBL.className = `sf-mini-btn ${CONFIG.layout.position === 'bottom-left' ? 'active' : ''}`;
-        btnBL.title = CONFIG.lang === 'zh' ? '左下角' : 'Bottom Left';
-        btnBL.onclick = () => setPos('bottom-left', 'float');
-
-        const btnBR = document.createElement('div');
-        btnBR.className = `sf-mini-btn ${CONFIG.layout.position === 'bottom-right' ? 'active' : ''}`;
-        btnBR.title = CONFIG.lang === 'zh' ? '右下角' : 'Bottom Right';
-        btnBR.onclick = () => setPos('bottom-right', 'float');
-
-        const btnBot = document.createElement('div');
-        btnBot.className = `sf-bar-btn ${CONFIG.layout.position === 'bottom' ? 'active' : ''}`;
-        btnBot.textContent = 'BOT';
-        btnBot.title = CONFIG.lang === 'zh' ? '底部横条' : 'Bottom Bar';
-        btnBot.style.fontSize = '9px';
-        btnBot.onclick = () => setPos('bottom', 'bar');
-
-        positionGrid.append(btnTL, btnTR, btnTop, btnBL, btnBR, btnBot);
-        layoutRow.append(layoutLabel, positionGrid);
-
-        const colorRow = document.createElement('div');
-        colorRow.style.marginTop = '8px'; colorRow.style.display='flex'; colorRow.style.alignItems='center'; colorRow.style.justifyContent='space-between';
-
-        const c1 = document.createElement('div'); c1.style.display='flex'; c1.style.alignItems='center'; c1.style.gap='4px';
-        const bgInp = document.createElement('input'); bgInp.type='color'; bgInp.value = CONFIG.theme.bg;
-        bgInp.style.cssText = "width:20px;height:20px;border:none;padding:0;cursor:pointer;border-radius:4px";
-        bgInp.onchange = e => { CONFIG.theme.bg = e.target.value; applyTheme(); saveConfig(); };
-        c1.append(document.createTextNode(t('lbl.bg')), bgInp);
-
-        const c2 = document.createElement('div'); c2.style.display='flex'; c2.style.alignItems='center'; c2.style.gap='4px';
-        const txtInp = document.createElement('input'); txtInp.type='color'; txtInp.value = CONFIG.theme.text;
-        txtInp.style.cssText = "width:20px;height:20px;border:none;padding:0;cursor:pointer;border-radius:4px";
-        txtInp.onchange = e => { CONFIG.theme.text = e.target.value; applyTheme(); saveConfig(); };
-        c2.append(document.createTextNode(t('lbl.txt')), txtInp);
-
-        colorRow.append(c1, c2);
-
-        const opRow = document.createElement('div');
-        opRow.className = 'sf-adv-row'; opRow.style.marginTop = '4px';
-        opRow.innerHTML = `<span class="sf-adv-lbl">${t('lbl.op')}</span>`;
-
-        const opVal = document.createElement('span');
-        opVal.style.fontSize = '12px'; opVal.style.marginLeft='auto'; opVal.style.marginRight='8px';
-        opVal.textContent = Math.round(CONFIG.theme.opacity * 100) + '%';
-
-        const opInp = document.createElement('input'); opInp.type='range'; opInp.min='0.5'; opInp.max='1'; opInp.step='0.05';
-        opInp.value = CONFIG.theme.opacity; opInp.style.width='80px';
+        const txtLabel = document.createElement('span');
+        txtLabel.textContent = CONFIG.lang === 'zh' ? '文字' : 'TXT';
+        txtLabel.style.fontSize = '9px';
+        const txtInp = document.createElement('input');
+        txtInp.type = 'color';
+        txtInp.value = CONFIG.theme.text;
+        txtInp.style.cssText = 'width:16px;height:16px;border:none;padding:0;cursor:pointer;border-radius:3px;';
+        txtInp.onchange = e => {
+            CONFIG.theme.text = e.target.value;
+            applyTheme();
+            saveSessionConfig();
+            showSuccessToast(t('saved'));
+        };
+        const opLabel = document.createElement('span');
+        opLabel.textContent = CONFIG.lang === 'zh' ? '透明度' : 'OP';
+        opLabel.style.fontSize = '9px';
+        const opInp = document.createElement('input');
+        opInp.type = 'range';
+        opInp.min = '0.5';
+        opInp.max = '1';
+        opInp.step = '0.05';
+        opInp.value = CONFIG.theme.opacity;
+        opInp.style.width = '45px';
+        opInp.style.height = '3px';
         opInp.oninput = e => {
             CONFIG.theme.opacity = e.target.value;
-            opVal.textContent = Math.round(e.target.value * 100) + '%';
-            applyTheme(); saveConfig();
-        };
-
-        opRow.append(opVal, opInp);
-
-        // 坐标轴标记配置
-        const coordRow = document.createElement('div');
-        coordRow.style.marginTop = '12px';
-        const coordTitle = document.createElement('div');
-        coordTitle.className = 'sf-adv-lbl';
-        coordTitle.textContent = CONFIG.lang === 'zh' ? '搜索结果坐标标记' : 'Search Result Markers';
-        coordTitle.style.marginBottom = '8px';
-        coordRow.appendChild(coordTitle);
-        
-        const coordGrid = document.createElement('div');
-        coordGrid.style.display = 'grid';
-        coordGrid.style.gridTemplateColumns = '1fr 1fr';
-        coordGrid.style.gap = '8px';
-        
-        // X 轴开关
-        const xAxisRow = document.createElement('div');
-        xAxisRow.className = 'sf-adv-row';
-        const xAxisLbl = document.createElement('span');
-        xAxisLbl.className = 'sf-adv-lbl';
-        xAxisLbl.style.fontSize = '12px';
-        xAxisLbl.textContent = CONFIG.lang === 'zh' ? 'X 轴（横向）' : 'X-Axis';
-        const xAxisChk = document.createElement('input');
-        xAxisChk.type = 'checkbox';
-        xAxisChk.checked = CONFIG.coordinates.showXAxis;
-        xAxisChk.onchange = (e) => {
-            CONFIG.coordinates.showXAxis = e.target.checked;
-            saveSessionConfig(); // 使用会话存储，不持久化
-            updateTickBarPositions();
-            drawTickBar();
+            applyTheme();
+            saveSessionConfig();
             showSuccessToast(t('saved'));
         };
-        xAxisRow.append(xAxisChk, xAxisLbl);
         
-        // Y 轴开关
-        const yAxisRow = document.createElement('div');
-        yAxisRow.className = 'sf-adv-row';
-        const yAxisLbl = document.createElement('span');
-        yAxisLbl.className = 'sf-adv-lbl';
-        yAxisLbl.style.fontSize = '12px';
-        yAxisLbl.textContent = CONFIG.lang === 'zh' ? 'Y 轴（纵向）' : 'Y-Axis';
-        const yAxisChk = document.createElement('input');
-        yAxisChk.type = 'checkbox';
-        yAxisChk.checked = CONFIG.coordinates.showYAxis;
-        yAxisChk.onchange = (e) => {
-            CONFIG.coordinates.showYAxis = e.target.checked;
-            saveSessionConfig(); // 使用会话存储，不持久化
-            updateTickBarPositions();
-            drawTickBar();
-            showSuccessToast(t('saved'));
-        };
-        yAxisRow.append(yAxisChk, yAxisLbl);
-        
-        coordGrid.append(xAxisRow, yAxisRow);
-        
-        // 多容器警告
-        const coordHint = document.createElement('div');
-        coordHint.className = 'sf-hint';
-        coordHint.textContent = CONFIG.lang === 'zh' ? 
-            '⚠️ 注意：在多列布局或多容器页面（如 ChatGPT）中，标记位置可能不完全准确。' :
-            '⚠️ Note: Markers may be inaccurate on multi-column or multi-container pages (e.g., ChatGPT).';
-        coordRow.append(coordGrid, coordHint);
+        themeCtrl.append(bgLabel, bgInp, txtLabel, txtInp, opLabel, opInp);
+        themeRow.append(themeLbl, themeCtrl);
+        grpLayout.appendChild(themeRow);
 
-        grpLayout.append(launchBtnRow, langRow, layoutRow, colorRow, opRow, coordRow);
+        // 语言切换（按钮形式）
+        const langRow = document.createElement('div');
+        langRow.className = 'sf-adv-row';
+        const langLbl = document.createElement('span');
+        langLbl.className = 'sf-adv-lbl';
+        langLbl.textContent = CONFIG.lang === 'zh' ? '语言' : 'Language';
+        
+        const langSwitch = document.createElement('div');
+        langSwitch.style.display = 'flex';
+        langSwitch.style.gap = '3px';
+        langSwitch.style.marginLeft = 'auto';
+        const optZh = document.createElement('button');
+        optZh.textContent = '中文';
+        optZh.style.cssText = `padding:1px 6px;font-size:9px;border-radius:3px;border:1px solid rgba(255,255,255,0.3);background:${CONFIG.lang === 'zh' ? 'var(--sf-accent)' : 'rgba(255,255,255,0.1)'};cursor:pointer;height:18px;line-height:16px;`;
+        optZh.onclick = () => switchLang('zh');
+        const optEn = document.createElement('button');
+        optEn.textContent = 'EN';
+        optEn.style.cssText = `padding:1px 6px;font-size:9px;border-radius:3px;border:1px solid rgba(255,255,255,0.3);background:${CONFIG.lang === 'en' ? 'var(--sf-accent)' : 'rgba(255,255,255,0.1)'};cursor:pointer;height:18px;line-height:16px;`;
+        optEn.onclick = () => switchLang('en');
+        langSwitch.append(optZh, optEn);
+        langRow.append(langLbl, langSwitch);
+        grpLayout.appendChild(langRow);
 
         grid.append(grpTools, grpSearch, grpLayout);
         advPanel.append(grid);
@@ -1095,7 +1544,7 @@
 
     function switchLang(l) {
         CONFIG.lang = l;
-        saveConfig();
+        saveSessionConfig(); // 使用会话存储，不持久化（advance 面板中的语言切换是临时的）
         renderAdvPanel();
         renderCheckboxes(chkGroup);
         updatePlaceholder();
@@ -1158,10 +1607,14 @@
             tickBarY.style[CONFIG.coordinates.yPosition === 'left' ? 'right' : 'left'] = 'auto';
         }
         if (tickBarX) {
-            // X轴位置自适应：栏模式下X轴位置与搜索栏相反，避免遮挡
+            // X轴位置自适应：当搜索栏在底部时，X轴无论选项是什么都自动去顶部，避免遮挡
             let xPosition = CONFIG.coordinates.xPosition;
-            if (CONFIG.layout.mode === 'bar') {
-                xPosition = CONFIG.layout.position === 'bottom' ? 'top' : 'bottom';
+            if (CONFIG.layout.mode === 'bar' && CONFIG.layout.position === 'bottom') {
+                // 搜索栏在底部时，X轴强制去顶部
+                xPosition = 'top';
+            } else if (CONFIG.layout.mode === 'bar') {
+                // 搜索栏在顶部时，X轴去底部
+                xPosition = 'bottom';
             }
             
             tickBarX.style[xPosition] = '0';
@@ -1198,7 +1651,12 @@
                 CONFIG.search[key] = c.checked;
                 saveConfig();
                 updatePlaceholder();
-                if (!CONFIG.search.fuzzy && !state.manualMode && state.isDirty) triggerSearch();
+                // 实时更新搜索结果：如果有搜索词，立即触发搜索
+                if (input.value && input.value.trim() && !CONFIG.search.fuzzy && !state.manualMode) {
+                    triggerSearch();
+                } else if (!CONFIG.search.fuzzy && !state.manualMode && state.isDirty) {
+                    triggerSearch();
+                }
             }
         };
         l.append(c, document.createTextNode(label)); return l;
@@ -1214,20 +1672,35 @@
             advPanel.classList.add('open');
             if (CONFIG.layout.mode === 'bar') {
                 const btnRect = e.currentTarget.getBoundingClientRect();
-                let top = btnRect.bottom + 6;
                 let right = window.innerWidth - btnRect.right;
                 if (right < 10) right = 10;
                 advPanel.style.position = 'fixed';
-                advPanel.style.top = (CONFIG.layout.position === 'top' ? top : 'auto') + 'px';
-                advPanel.style.bottom = (CONFIG.layout.position === 'bottom' ? (window.innerHeight - btnRect.top + 6) : 'auto') + 'px';
-                advPanel.style.right = right + 'px'; advPanel.style.left = 'auto';
+                advPanel.style.right = right + 'px';
+                advPanel.style.left = 'auto';
+                
+                // 根据搜索栏位置决定弹窗显示方向
+                if (CONFIG.layout.position === 'top') {
+                    // 搜索栏在顶部，弹窗显示在按钮下方
+                    advPanel.style.top = (btnRect.bottom + 6) + 'px';
+                    advPanel.style.bottom = 'auto';
+                } else {
+                    // 搜索栏在底部，弹窗显示在按钮上方
+                    // btnRect.top 是按钮顶部距离窗口顶部的距离
+                    // 弹窗底部应该在按钮顶部上方6px，即距离窗口顶部 (btnRect.top - 6)
+                    // 转换为距离窗口底部：window.innerHeight - (btnRect.top - 6)
+                    advPanel.style.bottom = (window.innerHeight - btnRect.top + 6) + 'px';
+                    advPanel.style.top = 'auto';
+                }
             } else {
                 advPanel.style.cssText = '';
             }
         }
     }
     function setPos(pos, mode) {
-        CONFIG.layout.position = pos; CONFIG.layout.mode = mode; saveConfig(); applyLayout();
+        CONFIG.layout.position = pos; 
+        CONFIG.layout.mode = mode; 
+        saveSessionConfig(); // 使用会话存储，不持久化（advance 面板中的位置设置是临时的）
+        applyLayout();
         advPanel.classList.remove('open');
         renderAdvPanel();
         showSuccessToast(t('saved'));
@@ -1770,12 +2243,12 @@
             const rect = range.getBoundingClientRect();
             
             // 根据配置决定滚动行为
-            if (!CONFIG.scroll.alwaysCenter) {
+            if (CONFIG.scroll.behavior === 'only-when-hidden') {
                 // 仅当结果不在可视区域时才滚动
                 const isOutOfView = rect.top < 0 || rect.bottom > window.innerHeight;
                 if (!isOutOfView) return;
             }
-            // alwaysCenter=true: 始终滚动到屏幕中间，避免被浮动元素遮挡
+            // behavior='always-center': 始终滚动到屏幕中间，避免被浮动元素遮挡
             
             let targetElement = range.startContainer;
             while (targetElement && targetElement.nodeType === Node.TEXT_NODE) {
@@ -1912,10 +2385,14 @@
                 // 绘制 X 轴标记（横向）
                 if (CONFIG.coordinates.showXAxis && tickBarX) {
                     const markX = document.createElement('div');
-                    // X轴位置自适应：栏模式下X轴位置与搜索栏相反
+                    // X轴位置自适应：当搜索栏在底部时，X轴无论选项是什么都自动去顶部，避免遮挡
                     let xPos = CONFIG.coordinates.xPosition === 'bottom' ? 'bottom' : 'top';
-                    if (CONFIG.layout.mode === 'bar') {
-                        xPos = CONFIG.layout.position === 'bottom' ? 'top' : 'bottom';
+                    if (CONFIG.layout.mode === 'bar' && CONFIG.layout.position === 'bottom') {
+                        // 搜索栏在底部时，X轴强制去顶部
+                        xPos = 'top';
+                    } else if (CONFIG.layout.mode === 'bar') {
+                        // 搜索栏在顶部时，X轴去底部
+                        xPos = 'bottom';
                     }
                     
                     const offset = isActive ? '3px' : '6px';

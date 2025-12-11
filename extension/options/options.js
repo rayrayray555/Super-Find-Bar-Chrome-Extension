@@ -69,6 +69,8 @@ const I18N = {
         axisBottom: '底部',
         axisLeft: '左侧',
         axisRight: '右侧',
+        showXAxis: '显示 X 轴',
+        showYAxis: '显示 Y 轴',
         showInToolbar: '显示在工具栏',
         showLaunchBtn: '显示右下角放大镜按钮',
         persistent: '刷新后自动显示搜索栏',
@@ -121,6 +123,8 @@ const I18N = {
         axisBottom: 'Bottom',
         axisLeft: 'Left',
         axisRight: 'Right',
+        showXAxis: 'Show X Axis',
+        showYAxis: 'Show Y Axis',
         showInToolbar: 'Show in Toolbar',
         showLaunchBtn: 'Show Launch Button',
         persistent: 'Auto-show on Refresh',
@@ -219,6 +223,10 @@ function updateUI() {
     const scrollValue = CONFIG.scroll.alwaysCenter ? 'always-center' : 'only-when-hidden';
     const scrollRadio = document.querySelector(`input[name="scroll-behavior"][value="${scrollValue}"]`);
     if (scrollRadio) scrollRadio.checked = true;
+
+    // 坐标轴显示控制
+    document.getElementById('show-x-axis').checked = CONFIG.coordinates.showXAxis || false;
+    document.getElementById('show-y-axis').checked = CONFIG.coordinates.showYAxis !== false; // 默认true
 
     // 坐标轴位置
     const xAxisValue = CONFIG.coordinates.xPosition || 'bottom';
@@ -377,6 +385,17 @@ function initEventListeners() {
             CONFIG.scroll.alwaysCenter = e.target.value === 'always-center';
             saveConfig();
         });
+    });
+
+    // 坐标轴显示控制
+    document.getElementById('show-x-axis').addEventListener('change', (e) => {
+        CONFIG.coordinates.showXAxis = e.target.checked;
+        saveConfig();
+    });
+    
+    document.getElementById('show-y-axis').addEventListener('change', (e) => {
+        CONFIG.coordinates.showYAxis = e.target.checked;
+        saveConfig();
     });
 
     // 坐标轴位置

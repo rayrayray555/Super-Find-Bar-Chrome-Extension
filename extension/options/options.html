@@ -216,6 +216,7 @@
                 <div class="setting-main">
                     <span class="setting-label" data-i18n="axisPosition">坐标轴位置</span>
                     <div class="setting-control" style="display: flex; flex-direction: column; gap: 8px;">
+                        <!-- X 轴位置（包含显示开关） -->
                         <div style="display: flex; align-items: center; gap: 16px;">
                             <span style="font-size: 13px; color: var(--text-secondary);" data-i18n="xAxisPosition">X 轴位置</span>
                             <div class="radio-options">
@@ -228,7 +229,12 @@
                                     <span data-i18n="axisBottom">底部</span>
                                 </label>
                             </div>
+                            <label class="switch">
+                                <input type="checkbox" id="show-x-axis">
+                                <span class="slider"></span>
+                            </label>
                         </div>
+                        <!-- Y 轴位置（包含显示开关） -->
                         <div style="display: flex; align-items: center; gap: 16px;">
                             <span style="font-size: 13px; color: var(--text-secondary);" data-i18n="yAxisPosition">Y 轴位置</span>
                             <div class="radio-options">
@@ -241,6 +247,10 @@
                                     <span data-i18n="axisRight">右侧</span>
                                 </label>
                             </div>
+                            <label class="switch">
+                                <input type="checkbox" id="show-y-axis">
+                                <span class="slider"></span>
+                            </label>
                         </div>
                     </div>
                 </div>
