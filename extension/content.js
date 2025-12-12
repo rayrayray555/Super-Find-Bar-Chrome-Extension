@@ -29,13 +29,14 @@
             ignoreAccents: true,
             regex: false,
             includeHidden: false,
+            includeForcedHidden: false,
             fuzzy: false,
             fuzzyTolerance: 1,
             pinned: ['matchCase', 'wholeWord', 'ignoreAccents', 'highlightAll'],
-            perfThreshold: 5000
+            perfThreshold: 10000
         },
         coordinates: {
-            showXAxis: false,  // X 轴标记（横向）
+            showXAxis: true,   // X 轴标记（横向，默认开启）
             showYAxis: true,   // Y 轴标记（纵向，默认开启）
             xPosition: 'bottom', // X 轴位置：top | bottom
             yPosition: 'right'   // Y 轴位置：left | right
@@ -313,13 +314,171 @@
         return null; // 没找到，使用 window
     }
 
-    function isVisible(el) {
+    // 判断是否为"自然隐藏"（页面存在但未触发显示的内容）
+    function isNaturallyHidden(el) {
+        if (!el) return false;
+        const style = window.getComputedStyle(el);
+        
+        // 检查是否是菜单类元素（menu、nav、header、dropdown等）
+        const tagName = el.tagName ? el.tagName.toLowerCase() : '';
+        const role = el.getAttribute('role') || '';
+        const className = el.className || '';
+        const id = el.id || '';
+        
+        // 识别菜单容器和菜单项
+        const isMenuContainer = tagName === 'menu' || tagName === 'nav' || tagName === 'header' || 
+                                role === 'menu' || role === 'navigation' || role === 'menubar' ||
+                                className.toLowerCase().includes('menu') || className.toLowerCase().includes('dropdown') ||
+                                id.toLowerCase().includes('menu') || id.toLowerCase().includes('dropdown');
+        
+        const isMenuItem = tagName === 'option' || tagName === 'menuitem' ||
+                          role === 'menuitem' || role === 'option' ||
+                          className.toLowerCase().includes('menu-item') || className.toLowerCase().includes('dropdown-item');
+        
+        // 如果是菜单类元素，即使display:none也视为自然隐藏（因为可以通过交互显示）
+        if (isMenuContainer || isMenuItem) {
+            if (style.display === 'none' || style.visibility === 'hidden') {
+                return true;
+            }
+        }
+        
+        // 自然隐藏的常见方式：
+        // 1. max-height: 0 + overflow: hidden（折叠菜单）
+        const maxHeight = style.maxHeight;
+        const overflow = style.overflow || style.overflowY;
+        if (maxHeight === '0px' && (overflow === 'hidden' || overflow === 'auto')) {
+            return true;
+        }
+        
+        // 2. height: 0 + overflow: hidden
+        const height = style.height;
+        if (height === '0px' && (overflow === 'hidden' || overflow === 'auto')) {
+            return true;
+        }
+        
+        // 3. transform: translateY(-100%) 或 translateX(-100%)（移出视口但未完全隐藏）
+        const transform = style.transform || style.webkitTransform;
+        if (transform && transform !== 'none') {
+            // 检查translateY(-100%)或translateX(-100%)，但不包括-9999px这种极端值
+            if (transform.includes('translateY(-100%)') || transform.includes('translateX(-100%)')) {
+                return true;
+            }
+        }
+        
+        // 4. position: absolute + 在视口外但父元素可见（滑动内容）
+        const position = style.position;
+        if (position === 'absolute' || position === 'fixed') {
+            const rect = el.getBoundingClientRect();
+            const viewportWidth = window.innerWidth || document.documentElement.clientWidth;
+            const viewportHeight = window.innerHeight || document.documentElement.clientHeight;
+            
+            // 如果元素在视口外，但父元素可见，可能是滑动内容
+            if ((rect.right < 0 || rect.bottom < 0 || rect.left > viewportWidth || rect.top > viewportHeight)) {
+                // 检查父元素是否可见
+                let parent = el.parentElement;
+                if (parent && parent !== document.body) {
+                    const parentStyle = window.getComputedStyle(parent);
+                    if (parentStyle.display !== 'none' && parentStyle.visibility !== 'hidden') {
+                        return true;
+                    }
+                }
+            }
+        }
+        
+        return false;
+    }
+
+    function isVisible(el, includeForcedHidden = false) {
         if (!el) return false;
         if (el.id === HOST_ID || el.id === BTN_ID || el.closest('#' + HOST_ID)) return false;
+        
         const style = window.getComputedStyle(el);
-        if (style.display === 'none' || style.visibility === 'hidden') return false;
+        
+        // 检查基本可见性属性（刻意隐藏）
+        if (style.display === 'none' || style.visibility === 'hidden') {
+            // 如果允许搜索强制隐藏内容，则允许这些元素
+            return includeForcedHidden;
+        }
+        
+        // 检查透明度（完全透明视为不可见）
+        const opacity = parseFloat(style.opacity);
+        if (isNaN(opacity) || opacity === 0) {
+            return includeForcedHidden;
+        }
+        
+        // 检查clip-path隐藏（clip-path: inset(100%) 表示完全隐藏）
+        const clipPath = style.clipPath || style.webkitClipPath;
+        if (clipPath && (clipPath.includes('inset(100%)') || clipPath.includes('inset(100% 100%)'))) {
+            return includeForcedHidden;
+        }
+        
+        // 检查transform隐藏（scale(0) 或 translateX(-9999px) 等）
+        const transform = style.transform || style.webkitTransform;
+        if (transform && transform !== 'none') {
+            // 检查scale(0)或scaleX(0)或scaleY(0)
+            if (transform.includes('scale(0') || transform.includes('scaleX(0') || transform.includes('scaleY(0')) {
+                return includeForcedHidden;
+            }
+            // 检查translateX/Y超出视口（如-9999px）
+            const translateMatch = transform.match(/translate[XY]\(([^)]+)\)/);
+            if (translateMatch) {
+                const translateValue = parseFloat(translateMatch[1]);
+                if (Math.abs(translateValue) > 10000) return includeForcedHidden;
+            }
+        }
+        
+        // 检查尺寸
         const rect = el.getBoundingClientRect();
-        return rect.width > 0 && rect.height > 0;
+        if (rect.width === 0 || rect.height === 0) return false;
+        
+        // 检查是否在视口内（对于position: absolute/fixed的元素）
+        const position = style.position;
+        if (position === 'absolute' || position === 'fixed') {
+            // 检查是否在视口范围内
+            const viewportWidth = window.innerWidth || document.documentElement.clientWidth;
+            const viewportHeight = window.innerHeight || document.documentElement.clientHeight;
+            
+            // 如果元素完全在视口外，视为不可见
+            if (rect.right < 0 || rect.bottom < 0 || rect.left > viewportWidth || rect.top > viewportHeight) {
+                return false;
+            }
+        }
+        
+        // 递归检查父元素可见性（如果父元素隐藏，子元素也不可见）
+        let parent = el.parentElement;
+        let depth = 0;
+        while (parent && parent !== document.body && depth < 10) {
+            const parentStyle = window.getComputedStyle(parent);
+            if (parentStyle.display === 'none' || parentStyle.visibility === 'hidden') {
+                return includeForcedHidden;
+            }
+            const parentOpacity = parseFloat(parentStyle.opacity);
+            if (!isNaN(parentOpacity) && parentOpacity === 0) {
+                return includeForcedHidden;
+            }
+            parent = parent.parentElement;
+            depth++;
+        }
+        
+        // 检查文本内容（对于文本节点）
+        if (el.nodeType === Node.TEXT_NODE) {
+            const text = el.textContent.trim();
+            if (!text || text.length === 0) return false;
+        } else if (el.nodeType === Node.ELEMENT_NODE) {
+            // 对于元素节点，检查是否有实际文本内容
+            const text = el.textContent.trim();
+            if (!text || text.length === 0) {
+                // 如果没有文本内容，检查是否有可见的子元素
+                const children = Array.from(el.children);
+                const hasVisibleChild = children.some(child => {
+                    const childStyle = window.getComputedStyle(child);
+                    return childStyle.display !== 'none' && childStyle.visibility !== 'hidden';
+                });
+                if (!hasVisibleChild) return false;
+            }
+        }
+        
+        return true;
     }
 
     function levenshtein(s, t) {
@@ -430,6 +589,7 @@
         hasWarned: false,
         abortController: null,
         currentHighlight: null,
+        isRadarLocating: false,
         supportsHighlight: typeof CSS !== 'undefined' && CSS.highlights,
         // 智能刷新相关状态
         lastResultCount: 0,
@@ -488,43 +648,68 @@
             const rippleStyle = document.createElement('style');
             rippleStyle.id = 'sf-ripple-styles';
             rippleStyle.textContent = `
-                @keyframes sf-ripple-animation {
+                /* 水滴涟漪动画：从很小扩散到全屏，像水滴滴到湖面（优化：更快更流畅） */
+                @keyframes sf-water-ripple {
                     0% {
-                        transform: scale(0);
+                        transform: scale(0.1) translateZ(0);
                         opacity: 0.8;
+                        border-width: 2px;
+                    }
+                    15% {
+                        opacity: 0.7;
+                        border-width: 1.8px;
+                    }
+                    30% {
+                        opacity: 0.5;
+                        border-width: 1.5px;
+                    }
+                    50% {
+                        opacity: 0.3;
+                        border-width: 1px;
+                    }
+                    70% {
+                        opacity: 0.15;
+                        border-width: 0.8px;
+                    }
+                    85% {
+                        opacity: 0.08;
+                        border-width: 0.5px;
                     }
                     100% {
-                        transform: scale(6);
+                        transform: scale(var(--ripple-max-scale)) translateZ(0);
                         opacity: 0;
+                        border-width: 0px;
                     }
                 }
-                .sf-ripple {
+                
+                /* 涟漪容器：使用严格的containment和隔离，完全不影响页面内容 */
+                .sf-ripple-container {
                     position: fixed;
-                    border-radius: 50%;
-                    border: 3px solid #8ab4f8;
                     pointer-events: none;
-                    z-index: 2147483646;
-                    animation: sf-ripple-animation 1.5s ease-out;
+                    z-index: 2147483647 !important; /* 最高z-index，确保不被遮挡 */
+                    contain: strict; /* 最严格的containment */
+                    isolation: isolate;
+                    transform: translate3d(0, 0, 0); /* 使用3D变换强制GPU加速和独立层 */
+                    overflow: hidden;
+                    will-change: transform;
+                    /* 移除混合模式，避免在白色背景上变白 */
+                    opacity: 1;
                 }
-                .sf-ripple::before,
-                .sf-ripple::after {
-                    content: '';
+                
+                /* 单层涟漪：圆形，从中心扩散，完全隔离 */
+                .sf-ripple-layer {
                     position: absolute;
                     border-radius: 50%;
-                    border: 3px solid #8ab4f8;
-                    top: -3px;
-                    left: -3px;
-                    width: 100%;
-                    height: 100%;
-                    animation: sf-ripple-animation 1.5s ease-out;
-                }
-                .sf-ripple::before {
-                    animation-delay: 0.2s;
-                    opacity: 0.6;
-                }
-                .sf-ripple::after {
-                    animation-delay: 0.4s;
-                    opacity: 0.4;
+                    border: 2px solid rgba(0, 122, 255, 0.7);
+                    background: transparent;
+                    animation: sf-water-ripple 1.8s cubic-bezier(0.4, 0.0, 0.2, 1) forwards; /* 更快的缓动函数 */
+                    will-change: transform, opacity;
+                    transform: translate3d(0, 0, 0); /* 3D变换强制独立层 */
+                    backface-visibility: hidden;
+                    -webkit-backface-visibility: hidden;
+                    /* 确保不影响其他元素 */
+                    contain: layout style paint;
+                    isolation: isolate;
                 }
             `;
             document.head.appendChild(rippleStyle);
@@ -798,60 +983,128 @@
                 return;
             }
             
+            // 锁定当前索引，防止在定位期间被修改
+            const lockedIdx = state.idx;
+            const lockedRange = currentRange.range;
+            
+            // 设置雷达定位标志，防止highlightAll()中的滚动冲突
+            state.isRadarLocating = true;
+            
             try {
-                const range = currentRange.range;
-                
                 // 先滚动到该位置，确保range可见
-                scrollToRangeImmediate(range);
+                scrollToRangeImmediate(lockedRange);
                 
                 // 等待滚动完成后再显示涟漪
                 setTimeout(() => {
                     try {
-                        const rect = range.getBoundingClientRect();
-                        let rippleWidth = 40;
-                        let rippleHeight = 40;
+                        const rect = lockedRange.getBoundingClientRect();
                         let rippleLeft = 0;
                         let rippleTop = 0;
                         
                         if (rect.width === 0 && rect.height === 0) {
                             // 如果range不可见，尝试获取包含它的元素
-                            const container = range.startContainer.nodeType === Node.TEXT_NODE 
-                                ? range.startContainer.parentElement 
-                                : range.startContainer;
+                            const container = lockedRange.startContainer.nodeType === Node.TEXT_NODE 
+                                ? lockedRange.startContainer.parentElement 
+                                : lockedRange.startContainer;
                             if (container) {
                                 const containerRect = container.getBoundingClientRect();
-                                rippleWidth = Math.max(containerRect.width, 40);
-                                rippleHeight = Math.max(containerRect.height, 40);
-                                rippleLeft = containerRect.left + containerRect.width / 2 - rippleWidth / 2;
-                                rippleTop = containerRect.top + containerRect.height / 2 - rippleHeight / 2;
+                                rippleLeft = containerRect.left + containerRect.width / 2;
+                                rippleTop = containerRect.top + containerRect.height / 2;
                             } else {
                                 console.log('[Super Find Bar] Cannot find container element');
+                                state.isRadarLocating = false;
                                 return;
                             }
                         } else {
-                            rippleWidth = Math.max(rect.width, 40);
-                            rippleHeight = Math.max(rect.height, 40);
-                            rippleLeft = rect.left + rect.width / 2 - rippleWidth / 2;
-                            rippleTop = rect.top + rect.height / 2 - rippleHeight / 2;
+                            rippleLeft = rect.left + rect.width / 2;
+                            rippleTop = rect.top + rect.height / 2;
                         }
                         
-                        const ripple = document.createElement('div');
-                        ripple.className = 'sf-ripple';
-                        ripple.style.width = rippleWidth + 'px';
-                        ripple.style.height = rippleHeight + 'px';
-                        ripple.style.left = rippleLeft + 'px';
-                        ripple.style.top = rippleTop + 'px';
-                        document.body.appendChild(ripple);
-                        setTimeout(() => ripple.remove(), 1500);
+                        // 计算屏幕对角线长度，缩小范围以减少闪烁
+                        const screenWidth = window.innerWidth;
+                        const screenHeight = window.innerHeight;
+                        const screenDiagonal = Math.sqrt(screenWidth * screenWidth + screenHeight * screenHeight);
+                        
+                        // 起始大小：30px（像水滴刚接触湖面）
+                        const rippleStartSize = 30;
+                        
+                        // 缩小扩散范围：0.5倍屏幕对角线，减少对页面的影响
+                        const rippleMaxSize = screenDiagonal * 0.5; // 0.5倍，足够覆盖大部分屏幕但不会太大
+                        const maxScale = rippleMaxSize / rippleStartSize;
+                        
+                        // 创建涟漪容器，大小包含最大扩散范围
+                        const containerSize = rippleMaxSize;
+                        const containerLeft = rippleLeft - containerSize / 2;
+                        const containerTop = rippleTop - containerSize / 2;
+                        
+                        const rippleContainer = document.createElement('div');
+                        rippleContainer.className = 'sf-ripple-container';
+                        rippleContainer.style.left = containerLeft + 'px';
+                        rippleContainer.style.top = containerTop + 'px';
+                        rippleContainer.style.width = containerSize + 'px';
+                        rippleContainer.style.height = containerSize + 'px';
+                        rippleContainer.style.setProperty('--ripple-max-scale', maxScale.toString());
+                        
+                        // 创建5层涟漪，每层有延迟，像水滴效果
+                        const layerCount = 5;
+                        const layerDelay = 0.12; // 每层延迟0.12秒（加快速度）
+                        const layerOpacities = [0.7, 0.6, 0.5, 0.4, 0.3]; // 每层的初始透明度
+                        const layerColors = [
+                            'rgba(0, 122, 255, 0.7)',   // iOS蓝色
+                            'rgba(10, 132, 255, 0.65)',
+                            'rgba(20, 148, 255, 0.6)',
+                            'rgba(30, 160, 255, 0.55)',
+                            'rgba(40, 170, 255, 0.5)'
+                        ];
+                        
+                        // 涟漪层相对于容器中心的位置
+                        const layerLeft = (containerSize - rippleStartSize) / 2;
+                        const layerTop = (containerSize - rippleStartSize) / 2;
+                        
+                        for (let i = 0; i < layerCount; i++) {
+                            const layer = document.createElement('div');
+                            layer.className = 'sf-ripple-layer';
+                            layer.style.width = rippleStartSize + 'px';
+                            layer.style.height = rippleStartSize + 'px';
+                            layer.style.left = layerLeft + 'px';
+                            layer.style.top = layerTop + 'px';
+                            layer.style.borderColor = layerColors[i];
+                            layer.style.opacity = layerOpacities[i];
+                            layer.style.animationDelay = (i * layerDelay) + 's';
+                            rippleContainer.appendChild(layer);
+                        }
+                        
+                        document.body.appendChild(rippleContainer);
+                        
+                        // 动画结束后立即移除，避免闪烁
+                        // 动画时长1.8s，加上最后一层的延迟，总共约2.16秒（比之前快约33%）
+                        const totalDuration = 1800 + (layerCount - 1) * layerDelay * 1000 + 100;
+                        setTimeout(() => {
+                            if (rippleContainer.parentNode) {
+                                rippleContainer.style.opacity = '0';
+                                rippleContainer.style.pointerEvents = 'none';
+                                requestAnimationFrame(() => {
+                                    if (rippleContainer.parentNode) {
+                                        rippleContainer.remove();
+                                    }
+                                    // 清除雷达定位标志
+                                    state.isRadarLocating = false;
+                                });
+                            } else {
+                                state.isRadarLocating = false;
+                            }
+                        }, totalDuration);
                     } catch (e) {
                         console.error('[Super Find Bar] Failed to create ripple:', e);
+                        state.isRadarLocating = false;
                     }
                 }, 100);
             } catch (e) {
                 console.error('[Super Find Bar] Failed to locate highlight:', e);
+                state.isRadarLocating = false;
             }
         }, 'sf-btn-radar');
-        
+
         const btnPrev = mkBtn('◀', t('titles.prev'), () => go(-1), 'sf-btn-prev');
         const btnNext = mkBtn('▶', t('titles.next'), () => go(1), 'sf-btn-next');
         btnAdv = mkBtn('⚙', t('titles.adv'), (e) => toggleAdv(e), 'sf-btn-adv');
@@ -1033,43 +1286,44 @@
             
             // 容错字符数（作为模糊搜索的子项，只有模糊搜索在工具栏中时才显示）
             if (key === 'fuzzy' && CONFIG.search.pinned.includes('fuzzy')) {
-                const fuzzyToleranceRow = document.createElement('div');
-                fuzzyToleranceRow.className = 'sf-adv-row';
+        const fuzzyToleranceRow = document.createElement('div');
+        fuzzyToleranceRow.className = 'sf-adv-row';
                 fuzzyToleranceRow.style.paddingLeft = '16px';
                 fuzzyToleranceRow.style.marginTop = '2px';
-                const toleranceLabel = document.createElement('span');
+        const toleranceLabel = document.createElement('span');
                 toleranceLabel.className = 'sf-adv-lbl';
-                toleranceLabel.textContent = CONFIG.lang === 'zh' ? '容错字符数' : 'Tolerance';
+        toleranceLabel.textContent = CONFIG.lang === 'zh' ? '容错字符数' : 'Tolerance';
                 toleranceLabel.style.fontSize = '10px';
-                
-                const toleranceControl = document.createElement('div');
-                toleranceControl.style.display = 'flex';
-                toleranceControl.style.alignItems = 'center';
+        
+        const toleranceControl = document.createElement('div');
+        toleranceControl.style.display = 'flex';
+        toleranceControl.style.alignItems = 'center';
                 toleranceControl.style.gap = '6px';
-                
-                const fuzzyRange = document.createElement('input');
-                fuzzyRange.type = 'range';
-                fuzzyRange.min = '0';
-                fuzzyRange.max = '5';
-                fuzzyRange.step = '1';
-                fuzzyRange.value = CONFIG.search.fuzzyTolerance;
+        
+        const fuzzyRange = document.createElement('input');
+        fuzzyRange.type = 'range';
+        fuzzyRange.min = '0';
+        fuzzyRange.max = '15'; // 增加到15（根据现代电脑性能，不限制搜索范围的情况下最大支持15个字符容错）
+        fuzzyRange.step = '1';
+        fuzzyRange.value = CONFIG.search.fuzzyTolerance;
                 fuzzyRange.style.width = '60px';
                 fuzzyRange.style.height = '3px';
-                fuzzyRange.oninput = (e) => {
-                    CONFIG.search.fuzzyTolerance = parseInt(e.target.value);
-                    toleranceValue.textContent = CONFIG.search.fuzzyTolerance;
-                    saveSessionConfig();
-                    showSuccessToast(t('saved'));
-                };
-                
-            const toleranceValue = document.createElement('span');
+        fuzzyRange.oninput = (e) => {
+            CONFIG.search.fuzzyTolerance = parseInt(e.target.value);
             toleranceValue.textContent = CONFIG.search.fuzzyTolerance;
+                    // advance中的修改只保存到临时配置，不影响options
+                    saveSessionConfig();
+            showSuccessToast(t('saved'));
+        };
+        
+        const toleranceValue = document.createElement('span');
+        toleranceValue.textContent = CONFIG.search.fuzzyTolerance;
             toleranceValue.style.minWidth = '14px';
-            toleranceValue.style.textAlign = 'center';
+        toleranceValue.style.textAlign = 'center';
             toleranceValue.style.fontSize = '9px';
-                
-                toleranceControl.append(fuzzyRange, toleranceValue);
-                fuzzyToleranceRow.append(toleranceLabel, toleranceControl);
+        
+        toleranceControl.append(fuzzyRange, toleranceValue);
+        fuzzyToleranceRow.append(toleranceLabel, toleranceControl);
                 grpTools.append(fuzzyToleranceRow);
             }
         });
@@ -1108,6 +1362,7 @@
             let v = parseInt(e.target.value);
             if(isNaN(v) || v < 0) v = 3000;
             CONFIG.search.perfThreshold = v;
+            // advance中的修改只保存到临时配置，不影响options
             saveSessionConfig();
             showSuccessToast(t('saved'));
         };
@@ -1123,9 +1378,10 @@
                 const defaultConfig = await chrome.storage.sync.get(STORAGE_KEY);
                 const defaultPerfThreshold = defaultConfig[STORAGE_KEY]?.search?.perfThreshold || DEFAULT_CONFIG.search.perfThreshold;
                 CONFIG.search.perfThreshold = defaultPerfThreshold;
-                perfInp.value = CONFIG.search.perfThreshold;
+            perfInp.value = CONFIG.search.perfThreshold;
+                // advance中的修改只保存到临时配置，不影响options
                 saveSessionConfig();
-                showSuccessToast(t('saved'));
+            showSuccessToast(t('saved'));
             } catch (e) {
                 console.error('[Super Find Bar] Failed to reset perf threshold:', e);
             }
@@ -1167,6 +1423,7 @@
         radioAlways.style.height = '10px';
         radioAlways.onchange = () => {
             CONFIG.scroll.behavior = 'always-center';
+            // advance中的修改只保存到临时配置，不影响options
             saveSessionConfig();
             showSuccessToast(t('saved'));
         };
@@ -1187,6 +1444,7 @@
         radioHidden.style.height = '10px';
         radioHidden.onchange = () => {
             CONFIG.scroll.behavior = 'only-when-hidden';
+            // advance中的修改只保存到临时配置，不影响options
             saveSessionConfig();
             showSuccessToast(t('saved'));
         };
@@ -1202,12 +1460,12 @@
         const colorLbl = document.createElement('span');
         colorLbl.className = 'sf-adv-lbl';
         colorLbl.textContent = CONFIG.lang === 'zh' ? '多词颜色方案' : 'Multi-term Colors';
-        
+
         const colorGrid = document.createElement('div');
         colorGrid.style.display = 'flex';
         colorGrid.style.gap = '2px';
         colorGrid.style.alignItems = 'center';
-        
+
         CONFIG.colors.forEach((color, idx) => {
             const colorCircle = document.createElement('div');
             colorCircle.style.cssText = 'width:16px;height:16px;border-radius:50%;border:1px solid rgba(255,255,255,0.3);overflow:hidden;cursor:pointer;position:relative;';
@@ -1221,6 +1479,7 @@
             colorInp.style.cssText = 'position:absolute;top:-50%;left:-50%;width:200%;height:200%;border:none;padding:0;margin:0;cursor:pointer;';
             colorInp.onchange = (e) => {
                 CONFIG.colors[idx] = e.target.value;
+                // advance中的修改只保存到临时配置，不影响options
                 saveSessionConfig();
                 showSuccessToast(t('saved'));
                 updateColorStyles();
@@ -1240,10 +1499,11 @@
                 const defaultConfig = await chrome.storage.sync.get(STORAGE_KEY);
                 const defaultColors = defaultConfig[STORAGE_KEY]?.colors || DEFAULT_CONFIG.colors;
                 CONFIG.colors = [...defaultColors];
+                // advance中的修改只保存到临时配置，不影响options
                 saveSessionConfig();
                 showSuccessToast(t('saved'));
-                updateColorStyles();
-                renderAdvPanel();
+            updateColorStyles();
+            renderAdvPanel();
             } catch (e) {
                 console.error('[Super Find Bar] Failed to reset colors:', e);
             }
@@ -1297,6 +1557,7 @@
         radioXTop.style.height = '9px';
         radioXTop.onchange = () => {
             CONFIG.coordinates.xPosition = 'top';
+            // advance中的修改只保存到临时配置，不影响options
             saveSessionConfig();
             updateTickBarPositions();
         };
@@ -1316,6 +1577,7 @@
         radioXBottom.style.height = '9px';
         radioXBottom.onchange = () => {
             CONFIG.coordinates.xPosition = 'bottom';
+            // advance中的修改只保存到临时配置，不影响options
             saveSessionConfig();
             showSuccessToast(t('saved'));
             updateTickBarPositions();
@@ -1324,6 +1586,7 @@
         // X轴显示开关（放在底部选项后面）
         const xAxisShowSwitch = createCompactSwitch(CONFIG.coordinates.showXAxis, (e) => {
             CONFIG.coordinates.showXAxis = e.target.checked;
+            // advance中的修改只保存到临时配置，不影响options
             saveSessionConfig();
             showSuccessToast(t('saved'));
             drawTickBar();
@@ -1354,6 +1617,7 @@
         radioYLeft.style.height = '9px';
         radioYLeft.onchange = () => {
             CONFIG.coordinates.yPosition = 'left';
+            // advance中的修改只保存到临时配置，不影响options
             saveSessionConfig();
             showSuccessToast(t('saved'));
             updateTickBarPositions();
@@ -1374,6 +1638,7 @@
         radioYRight.style.height = '9px';
         radioYRight.onchange = () => {
             CONFIG.coordinates.yPosition = 'right';
+            // advance中的修改只保存到临时配置，不影响options
             saveSessionConfig();
             showSuccessToast(t('saved'));
             updateTickBarPositions();
@@ -1382,6 +1647,7 @@
         // Y轴显示开关（放在右侧选项后面）
         const yAxisShowSwitch = createCompactSwitch(CONFIG.coordinates.showYAxis, (e) => {
             CONFIG.coordinates.showYAxis = e.target.checked;
+            // advance中的修改只保存到临时配置，不影响options
             saveSessionConfig();
             showSuccessToast(t('saved'));
             drawTickBar();
@@ -1398,20 +1664,32 @@
         const layoutLbl = document.createElement('span');
         layoutLbl.className = 'sf-adv-lbl';
         layoutLbl.textContent = CONFIG.lang === 'zh' ? '窗口位置' : 'Window Position';
-        
+
         const positionGrid = document.createElement('div');
         positionGrid.style.display = 'grid';
         positionGrid.style.gridTemplateColumns = '15px 15px minmax(50px, 1fr)';
         positionGrid.style.gridTemplateRows = 'repeat(2, 15px)';
         positionGrid.style.gap = '2px';
-        
+
         const btnTL = document.createElement('div');
         btnTL.className = `sf-mini-btn ${CONFIG.layout.position === 'top-left' ? 'active' : ''}`;
         btnTL.title = CONFIG.lang === 'zh' ? '左上角' : 'Top Left';
+        btnTL.textContent = 'TL';
+        btnTL.style.fontSize = '7px';
+        btnTL.style.fontWeight = '500';
+        btnTL.style.display = 'flex';
+        btnTL.style.alignItems = 'center';
+        btnTL.style.justifyContent = 'center';
         btnTL.onclick = () => setPos('top-left', 'float');
         const btnTR = document.createElement('div');
         btnTR.className = `sf-mini-btn ${CONFIG.layout.position === 'top-right' ? 'active' : ''}`;
         btnTR.title = CONFIG.lang === 'zh' ? '右上角' : 'Top Right';
+        btnTR.textContent = 'TR';
+        btnTR.style.fontSize = '7px';
+        btnTR.style.fontWeight = '500';
+        btnTR.style.display = 'flex';
+        btnTR.style.alignItems = 'center';
+        btnTR.style.justifyContent = 'center';
         btnTR.onclick = () => setPos('top-right', 'float');
         const btnTop = document.createElement('div');
         btnTop.className = `sf-bar-btn ${CONFIG.layout.position === 'top' ? 'active' : ''}`;
@@ -1423,10 +1701,22 @@
         const btnBL = document.createElement('div');
         btnBL.className = `sf-mini-btn ${CONFIG.layout.position === 'bottom-left' ? 'active' : ''}`;
         btnBL.title = CONFIG.lang === 'zh' ? '左下角' : 'Bottom Left';
+        btnBL.textContent = 'BL';
+        btnBL.style.fontSize = '7px';
+        btnBL.style.fontWeight = '500';
+        btnBL.style.display = 'flex';
+        btnBL.style.alignItems = 'center';
+        btnBL.style.justifyContent = 'center';
         btnBL.onclick = () => setPos('bottom-left', 'float');
         const btnBR = document.createElement('div');
         btnBR.className = `sf-mini-btn ${CONFIG.layout.position === 'bottom-right' ? 'active' : ''}`;
         btnBR.title = CONFIG.lang === 'zh' ? '右下角' : 'Bottom Right';
+        btnBR.textContent = 'BR';
+        btnBR.style.fontSize = '7px';
+        btnBR.style.fontWeight = '500';
+        btnBR.style.display = 'flex';
+        btnBR.style.alignItems = 'center';
+        btnBR.style.justifyContent = 'center';
         btnBR.onclick = () => setPos('bottom-right', 'float');
         const btnBot = document.createElement('div');
         btnBot.className = `sf-bar-btn ${CONFIG.layout.position === 'bottom' ? 'active' : ''}`;
@@ -1435,7 +1725,7 @@
         btnBot.style.fontSize = '7px';
         btnBot.style.fontWeight = '500';
         btnBot.onclick = () => setPos('bottom', 'bar');
-        
+
         positionGrid.append(btnTL, btnTR, btnTop, btnBL, btnBR, btnBot);
         layoutRow.append(layoutLbl, positionGrid);
         grpLayout.appendChild(layoutRow);
@@ -1448,6 +1738,7 @@
         launchBtnLbl.textContent = CONFIG.lang === 'zh' ? '显示右下角放大镜' : 'Show Launch Button';
         const launchBtnSwitch = createCompactSwitch(CONFIG.layout.showLaunchBtn, (e) => {
             CONFIG.layout.showLaunchBtn = e.target.checked;
+            // advance中的修改只保存到临时配置，不影响options
             saveSessionConfig();
             showSuccessToast(t('saved'));
             initLaunchBtn();
@@ -1477,6 +1768,7 @@
         bgInp.onchange = e => {
             CONFIG.theme.bg = e.target.value;
             applyTheme();
+            // advance中的修改只保存到临时配置，不影响options
             saveSessionConfig();
             showSuccessToast(t('saved'));
         };
@@ -1490,6 +1782,7 @@
         txtInp.onchange = e => {
             CONFIG.theme.text = e.target.value;
             applyTheme();
+            // advance中的修改只保存到临时配置，不影响options
             saveSessionConfig();
             showSuccessToast(t('saved'));
         };
@@ -1507,6 +1800,7 @@
         opInp.oninput = e => {
             CONFIG.theme.opacity = e.target.value;
             applyTheme();
+            // advance中的修改只保存到临时配置，不影响options
             saveSessionConfig();
             showSuccessToast(t('saved'));
         };
@@ -1699,7 +1993,8 @@
     function setPos(pos, mode) {
         CONFIG.layout.position = pos; 
         CONFIG.layout.mode = mode; 
-        saveSessionConfig(); // 使用会话存储，不持久化（advance 面板中的位置设置是临时的）
+        // advance中的修改只保存到临时配置，不影响options
+        saveSessionConfig();
         applyLayout();
         advPanel.classList.remove('open');
         renderAdvPanel();
@@ -1946,6 +2241,12 @@
                 });
             }
         }
+        
+        // 清除输入框高亮覆盖层
+        document.querySelectorAll('.sf-input-highlight').forEach(el => {
+            if (el._cleanup) el._cleanup();
+            el.remove();
+        });
 
         state.isDirty = false;
         state.searchId++;
@@ -2000,28 +2301,202 @@
             return;
         }
 
+        // 获取includeForcedHidden配置（从CONFIG中获取，不受pinned限制）
+        const includeForcedHidden = CONFIG.search.includeForcedHidden || false;
+
         const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, {
             acceptNode: n => {
                 const p = n.parentNode;
 
-                if(['SCRIPT','STYLE','TEXTAREA','NOSCRIPT','INPUT','SELECT'].includes(p.tagName))
+                // 注意：INPUT和TEXTAREA现在单独处理，不再在这里拒绝
+                if(['SCRIPT','STYLE','NOSCRIPT','SELECT'].includes(p.tagName))
                     return NodeFilter.FILTER_REJECT;
 
                 if(shadow && shadow.host && shadow.host.contains(p))
                     return NodeFilter.FILTER_REJECT;
 
-                if(!cfg.includeHidden && !isVisible(p))
+                // 根据includeHidden和includeForcedHidden决定是否接受节点
+                if (!cfg.includeHidden) {
+                    // 默认搜索：只搜索可见内容
+                    if (!isVisible(p, false)) {
+                        return NodeFilter.FILTER_REJECT;
+                    }
+                } else {
+                    // 包含隐藏元素：搜索自然隐藏的内容
+                    // 如果元素是可见的，直接接受
+                    if (isVisible(p, false)) {
+                        return NodeFilter.FILTER_ACCEPT;
+                    }
+                    
+                    // 检查是否是菜单类元素（需要特殊处理）
+                    const tagName = p.tagName ? p.tagName.toLowerCase() : '';
+                    const role = p.getAttribute('role') || '';
+                    const className = p.className || '';
+                    const isMenuElement = tagName === 'menu' || tagName === 'nav' || tagName === 'header' || 
+                                         tagName === 'select' || tagName === 'option' ||
+                                         role === 'menu' || role === 'navigation' || role === 'menubar' || role === 'menuitem' ||
+                                         className.toLowerCase().includes('menu') || className.toLowerCase().includes('dropdown');
+                    
+                    // 如果是菜单类元素，即使父元素隐藏也允许搜索（因为菜单可以通过交互显示）
+                    if (isMenuElement) {
+                        // 检查元素本身是否被刻意隐藏
+                        const style = window.getComputedStyle(p);
+                        if (style.display === 'none' || style.visibility === 'hidden') {
+                            // 菜单元素即使display:none也视为自然隐藏
+                            return NodeFilter.FILTER_ACCEPT;
+                        }
+                    }
+                    
+                    // 如果元素是自然隐藏的，接受
+                    if (isNaturallyHidden(p)) {
+                        return NodeFilter.FILTER_ACCEPT;
+                    }
+                    // 如果元素是刻意隐藏的，且includeForcedHidden为true，接受
+                    if (includeForcedHidden && !isVisible(p, false)) {
+                        // 再次检查，使用includeForcedHidden参数
+                        if (isVisible(p, true)) {
+                            return NodeFilter.FILTER_ACCEPT;
+                        }
+                    }
+                    // 其他情况拒绝
                     return NodeFilter.FILTER_REJECT;
+                }
 
                 return NodeFilter.FILTER_ACCEPT;
             }
         });
         const nodes = [];
         while(walker.nextNode()) nodes.push(walker.currentNode);
-
+        
+        // 初始化allRanges数组（必须在输入框处理之前声明）
         const allRanges = [];
         const MAX_HIGHLIGHTS = 1000;
         const BATCH_SIZE = 200;
+        
+        // 单独处理INPUT和TEXTAREA元素：搜索它们的value属性
+        const inputElements = document.querySelectorAll('input[type="text"], input[type="search"], input:not([type]), textarea');
+        for (const inputEl of inputElements) {
+            if (abortSignal.abort || state.searchId !== currentId) break;
+            
+            // 跳过shadow DOM中的元素
+            if (shadow && shadow.host && shadow.host.contains(inputEl)) continue;
+            
+            // 输入框的可见性检查：更宽松，主要检查display和visibility
+            const inputStyle = window.getComputedStyle(inputEl);
+            const isInputDisplayNone = inputStyle.display === 'none';
+            const isInputVisibilityHidden = inputStyle.visibility === 'hidden';
+            
+            // 如果输入框是display:none或visibility:hidden，根据配置决定是否搜索
+            if (isInputDisplayNone || isInputVisibilityHidden) {
+                if (!cfg.includeHidden) {
+                    // 默认搜索：跳过隐藏的输入框
+                    continue;
+                } else {
+                    // 包含隐藏元素：如果允许搜索强制隐藏内容，则允许
+                    if (!includeForcedHidden) {
+                        continue;
+                    }
+                }
+            }
+            // 其他情况（如opacity:0、height:0等）都允许搜索，因为输入框的value属性仍然有效
+            
+            const inputValue = inputEl.value || '';
+            if (!inputValue.trim()) continue;
+            
+            // 处理忽略重音符号
+            const textForSearch = cfg.ignoreAccents ? inputValue.normalize("NFD").replace(/[\u0300-\u036f]/g, "") : inputValue;
+            
+            // 对每个搜索词进行匹配
+            terms.forEach((termObj, termIdx) => {
+                if (abortSignal.abort || state.searchId !== currentId) return;
+                
+                const termColor = CONFIG.colors[termIdx % CONFIG.colors.length];
+                let matches = [];
+                
+                if (termObj.isRegex) {
+                    try {
+                        const re = new RegExp(termObj.text, cfg.matchCase ? 'g' : 'gi');
+                        let m;
+                        while ((m = re.exec(textForSearch)) !== null) {
+                            matches.push({ s: m.index, e: re.lastIndex });
+                        }
+                    } catch(e) {}
+                } else if (cfg.fuzzy) {
+                    const k = cfg.fuzzyTolerance;
+                    const termLen = termObj.text.length;
+                    const textLen = textForSearch.length;
+                    const term = cfg.matchCase ? termObj.text : termObj.text.toLowerCase();
+                    const text = cfg.matchCase ? textForSearch : textForSearch.toLowerCase();
+                    const minL = Math.max(1, termLen - k);
+                    const maxL = Math.min(textLen, termLen + k);
+                    
+                    for (let pos = 0; pos < textLen; pos++) {
+                        if (pos + minL > textLen) break;
+                        let bestDist = k + 1;
+                        let bestLen = -1;
+                        for (let len = minL; len <= maxL; len++) {
+                            if (pos + len > textLen) break;
+                            const sub = text.substr(pos, len);
+                            const dist = levenshtein(sub, term);
+                            if (dist <= k) {
+                                if (dist < bestDist) {
+                                    bestDist = dist;
+                                    bestLen = len;
+                                } else if (dist === bestDist) {
+                                    if (Math.abs(len - termLen) < Math.abs(bestLen - termLen)) bestLen = len;
+                                }
+                            }
+                        }
+                        if (bestLen !== -1) {
+                            matches.push({ s: pos, e: pos + bestLen });
+                            pos += bestLen - 1;
+                        }
+                    }
+                } else {
+                    const esc = s => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                    const pattern = effectiveWholeWord ? `\\b${esc(termObj.text)}\\b` : esc(termObj.text);
+                    const re = new RegExp(pattern, cfg.matchCase ? 'g' : 'gi');
+                    let m;
+                    while ((m = re.exec(textForSearch)) !== null) {
+                        matches.push({ s: m.index, e: re.lastIndex });
+                    }
+                }
+                
+                // 为每个匹配创建高亮
+                matches.forEach(match => {
+                    if (allRanges.length >= MAX_HIGHLIGHTS) return;
+                    
+                    try {
+                        // 对于INPUT和TEXTAREA，我们需要创建一个特殊的Range对象
+                        // 由于value不在DOM中，我们创建一个临时的文本节点来模拟
+                        // 但更好的方式是直接高亮整个输入框
+                        
+                        // 创建Range对象，指向输入框元素本身
+                        // 注意：这不会高亮文本内容，但可以标记匹配的位置
+                        const range = document.createRange();
+                        range.selectNodeContents(inputEl);
+                        
+                        // 验证Range是否有效
+                        const testRect = range.getBoundingClientRect();
+                        if (testRect.width === 0 && testRect.height === 0) return;
+                        
+                        // 存储匹配信息，用于后续高亮
+                        allRanges.push({
+                            range: range,
+                            color: termColor,
+                            node: inputEl, // 存储输入框元素
+                            isInput: true, // 标记为输入框
+                            matchStart: match.s, // 匹配的起始位置
+                            matchEnd: match.e, // 匹配的结束位置
+                            inputValue: inputValue // 存储原始值
+                        });
+                    } catch(e) {
+                        // Range创建失败，跳过
+                    }
+                });
+            });
+        }
+
         let lastYield = performance.now();
         let skippedDueToLimit = false;
 
@@ -2109,15 +2584,55 @@
 
             ranges.forEach(r => {
                 try {
+                    // 验证文本节点是否仍然有效
+                    if (!node || !node.parentNode) return;
+                    
+                    // 验证索引范围是否有效
+                    const nodeText = node.textContent || '';
+                    if (r.s < 0 || r.e > nodeText.length || r.s >= r.e) return;
+                    
+                    // 验证匹配的文本是否为空或仅包含空白字符
+                    const matchedText = nodeText.substring(r.s, r.e).trim();
+                    if (!matchedText || matchedText.length === 0) return;
+                    
+                    // 创建 Range 前再次检查父元素可见性（如果未启用包含隐藏内容）
+                    if (!cfg.includeHidden) {
+                        const parentEl = node.parentElement;
+                        if (parentEl && !isVisible(parentEl, false)) return;
+                    } else {
+                        // 包含隐藏元素时，检查是否为自然隐藏或强制隐藏
+                        const parentEl = node.parentElement;
+                        if (parentEl) {
+                            // 如果可见，直接通过
+                            if (isVisible(parentEl, false)) {
+                                // 继续处理
+                            } else if (isNaturallyHidden(parentEl)) {
+                                // 自然隐藏，通过
+                            } else if (includeForcedHidden && isVisible(parentEl, true)) {
+                                // 强制隐藏且允许搜索，通过
+                            } else {
+                                // 其他情况，拒绝
+                                return;
+                            }
+                        }
+                    }
+                    
                     const range = document.createRange();
                     range.setStart(node, r.s);
                     range.setEnd(node, r.e);
+                    
+                    // 验证 Range 是否有效（检查是否能获取矩形）
+                    const testRect = range.getBoundingClientRect();
+                    if (testRect.width === 0 && testRect.height === 0) return;
+                    
                     allRanges.push({
                         range: range,
                         color: r.c,
                         node: node
                     });
-                } catch(e) {}
+                } catch(e) {
+                    // Range 创建失败，跳过
+                }
             });
 
             nodes[i] = null;
@@ -2156,14 +2671,14 @@
         
         // 如果是用户主动搜索（非自动刷新），启动智能刷新监听器
         if (!isAutoRefresh) {
-            if (allRanges.length > 0) {
+        if (allRanges.length > 0) {
                 // 启动DOM变化监听，检测页面内容加载
                 startMutationObserver();
-                go(1);
-            } else {
+            go(1);
+        } else {
                 // 没有搜索结果，停止监听
                 stopMutationObserver();
-                drawTickBar();
+            drawTickBar();
             }
         } else {
             // 自动刷新：根据结果数量变化决定是否继续监听
@@ -2194,7 +2709,15 @@
         // 设置所有词的高亮
         if (show) {
             const colorGroups = {};
+            const inputHighlights = []; // 存储输入框高亮信息
+            
             state.ranges.forEach(rangeData => {
+                // 如果是输入框，特殊处理
+                if (rangeData.isInput) {
+                    inputHighlights.push(rangeData);
+                    return;
+                }
+                
                 const color = rangeData.color;
                 if (!colorGroups[color]) {
                     colorGroups[color] = [];
@@ -2209,6 +2732,73 @@
                     CSS.highlights.set(`sf-term-${colorIdx}`, highlight);
                 }
             });
+            
+            // 处理输入框高亮：创建覆盖层
+            if (inputHighlights.length > 0) {
+                // 清除旧的输入框高亮
+                document.querySelectorAll('.sf-input-highlight').forEach(el => el.remove());
+                
+                inputHighlights.forEach(rangeData => {
+                    try {
+                        const inputEl = rangeData.node;
+                        if (!inputEl || !inputEl.parentNode) return;
+                        
+                        const rect = inputEl.getBoundingClientRect();
+                        if (rect.width === 0 && rect.height === 0) return;
+                        
+                        // 创建高亮覆盖层（高亮整个输入框，因为精确计算文本位置很复杂）
+                        const highlightOverlay = document.createElement('div');
+                        highlightOverlay.className = 'sf-input-highlight';
+                        highlightOverlay.style.cssText = `
+                            position: fixed;
+                            pointer-events: none;
+                            z-index: 2147483645;
+                            background: ${rangeData.color}30;
+                            border: 2px solid ${rangeData.color};
+                            border-radius: 4px;
+                            box-shadow: 0 0 8px ${rangeData.color}60;
+                        `;
+                        
+                        // 高亮整个输入框（简单但有效）
+                        highlightOverlay.style.left = rect.left + 'px';
+                        highlightOverlay.style.top = rect.top + 'px';
+                        highlightOverlay.style.width = rect.width + 'px';
+                        highlightOverlay.style.height = rect.height + 'px';
+                        
+                        document.body.appendChild(highlightOverlay);
+                        
+                        // 监听输入框位置变化，更新高亮位置
+                        const updatePosition = () => {
+                            const newRect = inputEl.getBoundingClientRect();
+                            if (newRect.width > 0 && newRect.height > 0) {
+                                highlightOverlay.style.left = newRect.left + 'px';
+                                highlightOverlay.style.top = newRect.top + 'px';
+                                highlightOverlay.style.width = newRect.width + 'px';
+                                highlightOverlay.style.height = newRect.height + 'px';
+                            }
+                        };
+                        
+                        // 使用ResizeObserver和MutationObserver监听位置变化
+                        const resizeObserver = new ResizeObserver(updatePosition);
+                        resizeObserver.observe(inputEl);
+                        
+                        // 监听滚动事件更新位置
+                        const scrollHandler = () => updatePosition();
+                        window.addEventListener('scroll', scrollHandler, true);
+                        
+                        // 存储清理函数
+                        highlightOverlay._cleanup = () => {
+                            resizeObserver.disconnect();
+                            window.removeEventListener('scroll', scrollHandler, true);
+                        };
+                    } catch(e) {
+                        console.error('[Super Find Bar] Failed to highlight input:', e);
+                    }
+                });
+            }
+        } else {
+            // 清除输入框高亮
+            document.querySelectorAll('.sf-input-highlight').forEach(el => el.remove());
         }
 
         // 设置当前激活的高亮并滚动
@@ -2222,8 +2812,11 @@
             requestAnimationFrame(() => {
                 // RAF #2: 确保布局和绘制已完成
                 requestAnimationFrame(() => {
+                    // 检查是否正在使用雷达定位，如果是则跳过滚动，避免冲突
+                    if (!state.isRadarLocating) {
                     // 此时高亮已经渲染，立即滚动到位置
                     scrollToRangeImmediate(activeRange);
+                    }
                     
                     // RAF #3: 延迟绘制坐标轴，避免阻塞高亮和滚动
                     requestAnimationFrame(() => {
@@ -2464,6 +3057,9 @@
         return sampled;
     }
 
+    // 防抖检查隐藏状态的定时器
+    let hiddenCheckTimer = null;
+
     function go(dir) {
         if (!state.ranges.length) return;
         state.idx = (state.idx + dir + state.ranges.length) % state.ranges.length;
@@ -2477,22 +3073,44 @@
             return;
         }
 
+        // 先清除之前的隐藏检查定时器
+        if (hiddenCheckTimer) {
+            clearTimeout(hiddenCheckTimer);
+            hiddenCheckTimer = null;
+        }
+        
+        // 先更新UI和高亮，不立即检查隐藏状态
+        toast.textContent = '';
+        toast.classList.remove('visible');
+        input.classList.remove('warn-hidden');
+        highlightAll();
+        updateUI();
+        
+        // 延迟检查隐藏状态，确保DOM已完全更新（使用双重RAF确保高亮渲染完成）
+        requestAnimationFrame(() => {
+            requestAnimationFrame(() => {
+                // 再次延迟50ms，确保所有渲染完成
+                hiddenCheckTimer = setTimeout(() => {
         let isHidden = false;
         try {
             const rangeNode = currentRange.range.startContainer;
             const element = rangeNode.nodeType === Node.TEXT_NODE ? rangeNode.parentElement : rangeNode;
             isHidden = element ? !isVisible(element) : false;
         } catch(e) {
-            // 如果出错，也认为 Range 可能已失效
-            showContentChangedWarning();
-            return;
-        }
-
-        toast.textContent = isHidden ? t('hiddenAlert') : '';
-        toast.classList.toggle('visible', isHidden);
-        input.classList.toggle('warn-hidden', isHidden);
-        highlightAll();
-        updateUI();
+                        // 如果出错，不显示隐藏提示
+                        isHidden = false;
+                    }
+                    
+                    // 只有在确实隐藏时才显示提示
+                    if (isHidden) {
+                        toast.textContent = t('hiddenAlert');
+                        toast.classList.add('visible');
+                        input.classList.add('warn-hidden');
+                    }
+                    hiddenCheckTimer = null;
+                }, 50);
+            });
+        });
         
         // 智能刷新：切换后检测是否需要刷新搜索结果
         checkAndRefreshAfterSwitch();

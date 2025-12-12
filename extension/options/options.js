@@ -21,16 +21,17 @@ const DEFAULT_CONFIG = {
         ignoreAccents: true,
         regex: false,
         includeHidden: false,
+        includeForcedHidden: false,
         fuzzy: false,
         fuzzyTolerance: 1,
         pinned: ['matchCase', 'wholeWord', 'ignoreAccents', 'highlightAll'],
-        perfThreshold: 5000
+        perfThreshold: 10000
     },
     scroll: {
         alwaysCenter: true
     },
     coordinates: {
-        showXAxis: false,
+        showXAxis: true,
         showYAxis: true,
         xPosition: 'bottom',
         yPosition: 'right'
@@ -54,6 +55,8 @@ const I18N = {
         ignoreAccents: '忽略重音',
         regex: '正则表达式',
         includeHidden: '包含隐藏元素',
+        includeForcedHidden: '搜索强制隐藏内容',
+        includeForcedHiddenHint: '启用后将搜索开发者刻意隐藏的内容（如 display:none、visibility:hidden 等）。此选项仅影响"包含隐藏元素"开启时的行为。',
         fuzzy: '模糊搜索',
         fuzzyTolerance: '容错字符数',
         perfThreshold: '自动搜索阈值',
@@ -108,6 +111,8 @@ const I18N = {
         ignoreAccents: 'Ignore Accents',
         regex: 'Regular Expression',
         includeHidden: 'Include Hidden',
+        includeForcedHidden: 'Search Forced Hidden Content',
+        includeForcedHiddenHint: 'When enabled, searches for content deliberately hidden by developers (e.g., display:none, visibility:hidden). This option only affects behavior when "Include Hidden" is enabled.',
         fuzzy: 'Fuzzy Search',
         fuzzyTolerance: 'Tolerance Character Count',
         perfThreshold: 'Auto-Search Threshold',
@@ -215,6 +220,9 @@ function updateUI() {
     // 模糊搜索容错
     document.getElementById('fuzzy-tolerance').value = CONFIG.search.fuzzyTolerance;
     document.getElementById('fuzzy-tolerance-value').textContent = CONFIG.search.fuzzyTolerance;
+
+    // 搜索强制隐藏内容（高级选项）
+    document.getElementById('opt-includeForcedHidden').checked = CONFIG.search.includeForcedHidden || false;
 
     // 性能阈值
     document.getElementById('perf-threshold').value = CONFIG.search.perfThreshold;
@@ -363,6 +371,12 @@ function initEventListeners() {
     document.getElementById('fuzzy-tolerance').addEventListener('input', (e) => {
         CONFIG.search.fuzzyTolerance = parseInt(e.target.value);
         document.getElementById('fuzzy-tolerance-value').textContent = e.target.value;
+        saveConfig();
+    });
+
+    // 搜索强制隐藏内容（高级选项）
+    document.getElementById('opt-includeForcedHidden').addEventListener('change', (e) => {
+        CONFIG.search.includeForcedHidden = e.target.checked;
         saveConfig();
     });
 

@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Super Find Bar</title>
+    <style>
+        body {
+            width: 160px;
+            padding: 8px;
+            margin: 0;
+            font-family: system-ui, -apple-system, sans-serif;
+            font-size: 12px;
+            background: #202124;
+            color: #e8eaed;
+        }
+        .popup-item {
+            padding: 6px 8px;
+            cursor: pointer;
+            border-radius: 4px;
+            transition: background 0.2s;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .popup-item:hover {
+            background: rgba(255, 255, 255, 0.1);
+        }
+        .popup-item:active {
+            background: rgba(255, 255, 255, 0.15);
+        }
+        .popup-icon {
+            width: 14px;
+            height: 14px;
+            display: inline-block;
+            text-align: center;
+            font-size: 12px;
+            flex-shrink: 0;
+        }
+        .popup-divider {
+            height: 1px;
+            background: rgba(255, 255, 255, 0.1);
+            margin: 4px 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="popup-item" id="open-search">
+        <span class="popup-icon">🔍</span>
+        <span id="text-open-search">打开搜索栏</span>
+    </div>
+    <div class="popup-item" id="open-options">
+        <span class="popup-icon">⚙️</span>
+        <span id="text-open-options">设置选项</span>
+    </div>
+    <div class="popup-divider"></div>
+    <div class="popup-item" id="open-github">
+        <span class="popup-icon">⭐</span>
+        <span id="text-open-github">GitHub 仓库</span>
+    </div>
+    <script src="popup.js"></script>
+</body>
+</html>
+
+
+

@@ -170,10 +170,24 @@
                     <div class="fuzzy-tolerance-control">
                         <span data-i18n="fuzzyTolerance">容错字符数</span>
                         <div class="control-group">
-                            <input type="range" id="fuzzy-tolerance" min="0" max="5" step="1">
+                            <input type="range" id="fuzzy-tolerance" min="0" max="15" step="1">
                             <span id="fuzzy-tolerance-value" class="range-value">1</span>
                         </div>
                     </div>
+                </div>
+            </div>
+
+            <!-- 搜索强制隐藏内容（高级选项） -->
+            <div class="setting-item">
+                <div class="setting-main">
+                    <span class="setting-label" data-i18n="includeForcedHidden">搜索强制隐藏内容</span>
+                    <label class="switch">
+                        <input type="checkbox" id="opt-includeForcedHidden">
+                        <span class="slider"></span>
+                    </label>
+                </div>
+                <div class="setting-desc-box" data-i18n="includeForcedHiddenHint">
+                    启用后将搜索开发者刻意隐藏的内容（如 display:none、visibility:hidden 等）。此选项仅影响"包含隐藏元素"开启时的行为。
                 </div>
             </div>
 
@@ -215,10 +229,10 @@
             <div class="setting-item">
                 <div class="setting-main">
                     <span class="setting-label" data-i18n="axisPosition">坐标轴位置</span>
-                    <div class="setting-control" style="display: flex; flex-direction: column; gap: 8px;">
+                    <div class="setting-control axis-control">
                         <!-- X 轴位置（包含显示开关） -->
-                        <div style="display: flex; align-items: center; gap: 16px;">
-                            <span style="font-size: 13px; color: var(--text-secondary);" data-i18n="xAxisPosition">X 轴位置</span>
+                        <div class="axis-row">
+                            <span class="axis-label" data-i18n="xAxisPosition">X 轴位置</span>
                             <div class="radio-options">
                                 <label class="radio-label">
                                     <input type="radio" name="x-axis-position" value="top">
@@ -235,8 +249,8 @@
                             </label>
                         </div>
                         <!-- Y 轴位置（包含显示开关） -->
-                        <div style="display: flex; align-items: center; gap: 16px;">
-                            <span style="font-size: 13px; color: var(--text-secondary);" data-i18n="yAxisPosition">Y 轴位置</span>
+                        <div class="axis-row">
+                            <span class="axis-label" data-i18n="yAxisPosition">Y 轴位置</span>
                             <div class="radio-options">
                                 <label class="radio-label">
                                     <input type="radio" name="y-axis-position" value="left">

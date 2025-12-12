@@ -502,6 +502,27 @@ input[type="number"]:focus {
     accent-color: var(--primary);
 }
 
+/* Axis Control (XY轴设置对齐) */
+.axis-control {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.axis-row {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    height: 32px;
+}
+
+.axis-label {
+    font-size: 13px;
+    color: var(--text-secondary);
+    min-width: 80px;
+    flex-shrink: 0;
+}
+
 /* Shortcut Box */
 .shortcut-display {
     display: flex;
