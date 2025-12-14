@@ -1,487 +1,56 @@
 // Super Find Bar - Chrome Extension V1.0
-// Content Script
+// Content Script - 主入口文件
 (function () {
     'use strict';
 
-    /********************
-      1. 配置与常量 (Config & Constants)
-    ********************/
-    const HOST_ID = 'sf-bar-root-v17';
-    const BTN_ID = 'sf-launch-btn-v17';
-    const STORAGE_KEY = 'sf-bar-config-v17';
-
-    const DEFAULT_CONFIG = {
-        theme: {
-            bg: '#202124',
-            text: '#e8eaed',
-            opacity: 0.95
-        },
-        layout: {
-            mode: 'float',
-            position: 'top-right',
-            persistent: false,
-            showLaunchBtn: false
-        },
-        search: {
-            matchCase: false,
-            wholeWord: false,
-            highlightAll: true,
-            ignoreAccents: true,
-            regex: false,
-            includeHidden: false,
-            includeForcedHidden: false,
-            fuzzy: false,
-            fuzzyTolerance: 1,
-            pinned: ['matchCase', 'wholeWord', 'ignoreAccents', 'highlightAll'],
-            perfThreshold: 10000
-        },
-        coordinates: {
-            showXAxis: true,   // X 轴标记（横向，默认开启）
-            showYAxis: true,   // Y 轴标记（纵向，默认开启）
-            xPosition: 'bottom', // X 轴位置：top | bottom
-            yPosition: 'right'   // Y 轴位置：left | right
-        },
-        scroll: {
-            behavior: 'always-center'  // 滚动行为：'always-center' | 'only-when-hidden'
-        },
-        colors: [
-            '#fce8b2', // Yellow
-            '#ccff90', // Green
-            '#8ab4f8', // Blue
-            '#e6c9a8', // Beige
-            '#d7aefb', // Purple
-            '#fdcfe8', // Pink
-            '#a7ffeb'  // Teal
-        ],
-        lang: 'zh' // 'zh' | 'en'
-    };
+    // 使用模块化的配置和工具函数
+    const HOST_ID = window.SF_CONFIG.HOST_ID;
+    const BTN_ID = window.SF_CONFIG.BTN_ID;
+    const STORAGE_KEY = window.SF_CONFIG.STORAGE_KEY;
+    const DEFAULT_CONFIG = window.SF_CONFIG.DEFAULT_CONFIG;
 
     let CONFIG = { ...DEFAULT_CONFIG };
 
-    // 异步加载配置
+    // 使用模块化的配置加载函数
     async function loadConfig() {
-        try {
-            const result = await chrome.storage.sync.get(STORAGE_KEY);
-            if (result[STORAGE_KEY]) {
-                CONFIG = {
-                    ...DEFAULT_CONFIG,
-                    ...result[STORAGE_KEY],
-                    theme: { ...DEFAULT_CONFIG.theme, ...result[STORAGE_KEY].theme },
-                    layout: { ...DEFAULT_CONFIG.layout, ...result[STORAGE_KEY].layout },
-                    search: { ...DEFAULT_CONFIG.search, ...result[STORAGE_KEY].search },
-                    coordinates: { ...DEFAULT_CONFIG.coordinates, ...result[STORAGE_KEY].coordinates },
-                    scroll: { ...DEFAULT_CONFIG.scroll, ...result[STORAGE_KEY].scroll },
-                    colors: result[STORAGE_KEY].colors || DEFAULT_CONFIG.colors
-                };
-            }
-            if (!CONFIG.lang) CONFIG.lang = 'zh';
-            if (!CONFIG.coordinates) CONFIG.coordinates = DEFAULT_CONFIG.coordinates;
-            if (!CONFIG.scroll) CONFIG.scroll = DEFAULT_CONFIG.scroll;
-            // 确保 scroll.behavior 有默认值
-            if (!CONFIG.scroll.behavior) {
-                CONFIG.scroll.behavior = DEFAULT_CONFIG.scroll.behavior;
-            }
-            
-            // 从 chrome.storage.local 加载临时设置（跨 tab 共享，浏览器关闭后清除）
-            // 优先级：storage.local（临时值）> storage.sync（默认值）
-            try {
-                const tempConfig = await chrome.storage.local.get([
-                    'sf-temp-pinned',
-                    'sf-temp-coordinates',
-                    'sf-temp-search',
-                    'sf-temp-colors',
-                    'sf-temp-layout',
-                    'sf-temp-theme',
-                    'sf-temp-lang'
-                ]);
-                
-                // 工具栏显示
-                if (tempConfig['sf-temp-pinned']) {
-                    CONFIG.search.pinned = tempConfig['sf-temp-pinned'];
-                }
-                
-                // 坐标轴设置
-                if (tempConfig['sf-temp-coordinates']) {
-                    CONFIG.coordinates = { ...CONFIG.coordinates, ...tempConfig['sf-temp-coordinates'] };
-                }
-                
-                // 搜索设置
-                if (tempConfig['sf-temp-search']) {
-                    const searchTemp = tempConfig['sf-temp-search'];
-                    CONFIG.search.fuzzy = searchTemp.fuzzy !== undefined ? searchTemp.fuzzy : CONFIG.search.fuzzy;
-                    CONFIG.search.fuzzyTolerance = searchTemp.fuzzyTolerance !== undefined ? searchTemp.fuzzyTolerance : CONFIG.search.fuzzyTolerance;
-                    CONFIG.search.perfThreshold = searchTemp.perfThreshold !== undefined ? searchTemp.perfThreshold : CONFIG.search.perfThreshold;
-                }
-                
-                // 滚动行为设置
-                if (tempConfig['sf-temp-scroll']) {
-                    const scrollTemp = tempConfig['sf-temp-scroll'];
-                    CONFIG.scroll.behavior = scrollTemp.behavior || CONFIG.scroll.behavior;
-                }
-                
-                // 颜色方案
-                if (tempConfig['sf-temp-colors']) {
-                    CONFIG.colors = tempConfig['sf-temp-colors'];
-                }
-                
-                // 布局设置
-                if (tempConfig['sf-temp-layout']) {
-                    const layoutTemp = tempConfig['sf-temp-layout'];
-                    CONFIG.layout.showLaunchBtn = layoutTemp.showLaunchBtn !== undefined ? layoutTemp.showLaunchBtn : CONFIG.layout.showLaunchBtn;
-                    CONFIG.layout.position = layoutTemp.position || CONFIG.layout.position;
-                    CONFIG.layout.mode = layoutTemp.mode || CONFIG.layout.mode;
-                }
-                
-                // 主题设置
-                if (tempConfig['sf-temp-theme']) {
-                    const themeTemp = tempConfig['sf-temp-theme'];
-                    CONFIG.theme.bg = themeTemp.bg || CONFIG.theme.bg;
-                    CONFIG.theme.text = themeTemp.text || CONFIG.theme.text;
-                    CONFIG.theme.opacity = themeTemp.opacity !== undefined ? themeTemp.opacity : CONFIG.theme.opacity;
-                }
-                
-                // 语言设置
-                if (tempConfig['sf-temp-lang']) {
-                    CONFIG.lang = tempConfig['sf-temp-lang'];
-                }
-            } catch (e) {
-                console.error('[Super Find Bar] Failed to load temporary config:', e);
-            }
-        } catch (e) {
-            console.error('[Super Find Bar] Failed to load config:', e);
-        }
+        CONFIG = await window.SF_CONFIG.loadConfig();
     }
 
     async function saveConfig() {
-        try {
-            await chrome.storage.sync.set({ [STORAGE_KEY]: CONFIG });
-        } catch (e) {
-            console.error('[Super Find Bar] Failed to save config:', e);
+        await window.SF_CONFIG.saveConfig(CONFIG);
         }
-    }
-    
-    // 保存临时配置到 chrome.storage.local（跨 tab 共享，浏览器关闭后由 background.js 清除）
-    async function saveSessionConfig() {
-        try {
-            await chrome.storage.local.set({
-                'sf-temp-pinned': CONFIG.search.pinned,
-                'sf-temp-coordinates': CONFIG.coordinates,
-                'sf-temp-search': {
-                    fuzzy: CONFIG.search.fuzzy,
-                    fuzzyTolerance: CONFIG.search.fuzzyTolerance,
-                    perfThreshold: CONFIG.search.perfThreshold
-                },
-                'sf-temp-scroll': {
-                    behavior: CONFIG.scroll.behavior
-                },
-                'sf-temp-colors': CONFIG.colors,
-                'sf-temp-layout': {
-                    showLaunchBtn: CONFIG.layout.showLaunchBtn,
-                    position: CONFIG.layout.position,
-                    mode: CONFIG.layout.mode
-                },
-                'sf-temp-theme': {
-                    bg: CONFIG.theme.bg,
-                    text: CONFIG.theme.text,
-                    opacity: CONFIG.theme.opacity
-                },
-                'sf-temp-lang': CONFIG.lang
-            });
-        } catch (e) {
-            console.error('[Super Find Bar] Failed to save temporary config:', e);
-        }
-    }
 
-    // i18n
-    const I18N = {
-        zh: {
-            ph: '多词搜索用"，"分隔（不同颜色）',
-            phFuzzy: '模糊模式：输入后按 Enter 搜索...',
-            phManual: '页面内容过多：输入后按 Enter 搜索...',
-            count: '{i} / {total}',
-            hiddenAlert: '位于隐藏区域',
-            loading: '计算中...',
-            saved: '✓ 已保存',
-            titles: {
-                prev: '上一个 (←)',
-                next: '下一个 (→)',
-                close: '关闭 (Esc)',
-                pin: '固定窗口（刷新后自动显示）',
-                rate: '给个好评吧 ♥',
-                adv: '设置',
-                reset: '重置'
-            },
-            group: {
-                tool: '工具栏显示',
-                search: '搜索设置',
-                layout: '布局 & 外观'
-            },
-            lbl: {
-                fuzzyTol: '模糊容错 (字数)',
-                perf: '自动搜索阈值 (节点数)',
-                perfHint: '超过此数值将关闭实时搜索。',
-                bg: '背景',
-                txt: '文字',
-                op: '背景透明度',
-                lang: '语言 / Language'
-            },
-            opts: {
-                matchCase: '区分大小写',
-                wholeWord: '全词匹配',
-                highlightAll: '高亮所有',
-                ignoreAccents: '忽略重音',
-                regex: '正则表达式',
-                includeHidden: '包含隐藏',
-                fuzzy: '模糊搜索'
-            }
-        },
-        en: {
-            ph: 'Multi-term: comma-separated (different colors)',
-            phFuzzy: 'Fuzzy Mode: Press Enter to search...',
-            phManual: 'Page too large: Press Enter to search...',
-            count: '{i} / {total}',
-            hiddenAlert: 'Hidden Element',
-            loading: 'Searching...',
-            saved: '✓ Saved',
-            titles: {
-                prev: 'Previous (←)',
-                next: 'Next (→)',
-                close: 'Close (Esc)',
-                pin: 'Pin (Auto-show on refresh)',
-                rate: 'Rate on Chrome Web Store ♥',
-                adv: 'Settings',
-                reset: 'Reset'
-            },
-            group: {
-                tool: 'Toolbar Options',
-                search: 'Search Settings',
-                layout: 'Layout & Appearance'
-            },
-            lbl: {
-                fuzzyTol: 'Fuzzy Tolerance',
-                perf: 'Auto-Search Threshold',
-                perfHint: 'Disable live search if nodes exceed this.',
-                bg: 'Bg',
-                txt: 'Txt',
-                op: 'Bg Opacity',
-                lang: 'Language'
-            },
-            opts: {
-                matchCase: 'Match Case',
-                wholeWord: 'Whole Word',
-                highlightAll: 'Highlight All',
-                ignoreAccents: 'Ignore Accents',
-                regex: 'Regex',
-                includeHidden: 'Include Hidden',
-                fuzzy: 'Fuzzy Search'
-            }
-        }
-    };
+    async function saveSessionConfig() {
+        await window.SF_CONFIG.saveSessionConfig(CONFIG);
+    }
 
     function t(path) {
-        const keys = path.split('.');
-        let curr = I18N[CONFIG.lang];
-        for (let k of keys) curr = curr[k];
-        return curr;
+        return window.SF_CONFIG.t(CONFIG, path);
     }
 
     /********************
-      2. 核心逻辑 (Core Logic)
+      2. 核心逻辑 (Core Logic) - 使用模块化工具函数
     ********************/
 
-    function isCJK(str) { return /[\u4e00-\u9fa5]/.test(str); }
+    /********************
+      2. 核心逻辑 (Core Logic) - 使用模块化工具函数
+    ********************/
 
-    // 智能检测滚动容器（用于 ChatGPT 等自定义滚动布局）
-    function findScrollContainer(element) {
+    // 使用模块化的工具函数（如果模块未加载，使用后备函数）
+    const isCJK = window.SF_UTILS?.isCJK || ((str) => /[\u4e00-\u9fa5]/.test(str));
+    const findScrollContainer = window.SF_UTILS?.findScrollContainer || function(element) {
         let current = element;
-        // 向上遍历最多20层（避免无限循环）
         for (let i = 0; i < 20; i++) {
-            if (!current || current === document.body || current === document.documentElement) {
-                break;
-            }
-            
-            // 检查是否为滚动容器
+            if (!current || current === document.body || current === document.documentElement) break;
             const style = window.getComputedStyle(current);
             const isScrollable = style.overflow === 'auto' || style.overflow === 'scroll' || 
                                  style.overflowY === 'auto' || style.overflowY === 'scroll';
-            
-            if (isScrollable && current.scrollHeight > current.clientHeight) {
-                return current; // 找到滚动容器
-            }
-            
+            if (isScrollable && current.scrollHeight > current.clientHeight) return current;
             current = current.parentElement;
         }
-        return null; // 没找到，使用 window
-    }
-
-    // 判断是否为"自然隐藏"（页面存在但未触发显示的内容）
-    function isNaturallyHidden(el) {
-        if (!el) return false;
-        const style = window.getComputedStyle(el);
-        
-        // 检查是否是菜单类元素（menu、nav、header、dropdown等）
-        const tagName = el.tagName ? el.tagName.toLowerCase() : '';
-        const role = el.getAttribute('role') || '';
-        const className = el.className || '';
-        const id = el.id || '';
-        
-        // 识别菜单容器和菜单项
-        const isMenuContainer = tagName === 'menu' || tagName === 'nav' || tagName === 'header' || 
-                                role === 'menu' || role === 'navigation' || role === 'menubar' ||
-                                className.toLowerCase().includes('menu') || className.toLowerCase().includes('dropdown') ||
-                                id.toLowerCase().includes('menu') || id.toLowerCase().includes('dropdown');
-        
-        const isMenuItem = tagName === 'option' || tagName === 'menuitem' ||
-                          role === 'menuitem' || role === 'option' ||
-                          className.toLowerCase().includes('menu-item') || className.toLowerCase().includes('dropdown-item');
-        
-        // 如果是菜单类元素，即使display:none也视为自然隐藏（因为可以通过交互显示）
-        if (isMenuContainer || isMenuItem) {
-            if (style.display === 'none' || style.visibility === 'hidden') {
-                return true;
-            }
-        }
-        
-        // 自然隐藏的常见方式：
-        // 1. max-height: 0 + overflow: hidden（折叠菜单）
-        const maxHeight = style.maxHeight;
-        const overflow = style.overflow || style.overflowY;
-        if (maxHeight === '0px' && (overflow === 'hidden' || overflow === 'auto')) {
-            return true;
-        }
-        
-        // 2. height: 0 + overflow: hidden
-        const height = style.height;
-        if (height === '0px' && (overflow === 'hidden' || overflow === 'auto')) {
-            return true;
-        }
-        
-        // 3. transform: translateY(-100%) 或 translateX(-100%)（移出视口但未完全隐藏）
-        const transform = style.transform || style.webkitTransform;
-        if (transform && transform !== 'none') {
-            // 检查translateY(-100%)或translateX(-100%)，但不包括-9999px这种极端值
-            if (transform.includes('translateY(-100%)') || transform.includes('translateX(-100%)')) {
-                return true;
-            }
-        }
-        
-        // 4. position: absolute + 在视口外但父元素可见（滑动内容）
-        const position = style.position;
-        if (position === 'absolute' || position === 'fixed') {
-            const rect = el.getBoundingClientRect();
-            const viewportWidth = window.innerWidth || document.documentElement.clientWidth;
-            const viewportHeight = window.innerHeight || document.documentElement.clientHeight;
-            
-            // 如果元素在视口外，但父元素可见，可能是滑动内容
-            if ((rect.right < 0 || rect.bottom < 0 || rect.left > viewportWidth || rect.top > viewportHeight)) {
-                // 检查父元素是否可见
-                let parent = el.parentElement;
-                if (parent && parent !== document.body) {
-                    const parentStyle = window.getComputedStyle(parent);
-                    if (parentStyle.display !== 'none' && parentStyle.visibility !== 'hidden') {
-                        return true;
-                    }
-                }
-            }
-        }
-        
-        return false;
-    }
-
-    function isVisible(el, includeForcedHidden = false) {
-        if (!el) return false;
-        if (el.id === HOST_ID || el.id === BTN_ID || el.closest('#' + HOST_ID)) return false;
-        
-        const style = window.getComputedStyle(el);
-        
-        // 检查基本可见性属性（刻意隐藏）
-        if (style.display === 'none' || style.visibility === 'hidden') {
-            // 如果允许搜索强制隐藏内容，则允许这些元素
-            return includeForcedHidden;
-        }
-        
-        // 检查透明度（完全透明视为不可见）
-        const opacity = parseFloat(style.opacity);
-        if (isNaN(opacity) || opacity === 0) {
-            return includeForcedHidden;
-        }
-        
-        // 检查clip-path隐藏（clip-path: inset(100%) 表示完全隐藏）
-        const clipPath = style.clipPath || style.webkitClipPath;
-        if (clipPath && (clipPath.includes('inset(100%)') || clipPath.includes('inset(100% 100%)'))) {
-            return includeForcedHidden;
-        }
-        
-        // 检查transform隐藏（scale(0) 或 translateX(-9999px) 等）
-        const transform = style.transform || style.webkitTransform;
-        if (transform && transform !== 'none') {
-            // 检查scale(0)或scaleX(0)或scaleY(0)
-            if (transform.includes('scale(0') || transform.includes('scaleX(0') || transform.includes('scaleY(0')) {
-                return includeForcedHidden;
-            }
-            // 检查translateX/Y超出视口（如-9999px）
-            const translateMatch = transform.match(/translate[XY]\(([^)]+)\)/);
-            if (translateMatch) {
-                const translateValue = parseFloat(translateMatch[1]);
-                if (Math.abs(translateValue) > 10000) return includeForcedHidden;
-            }
-        }
-        
-        // 检查尺寸
-        const rect = el.getBoundingClientRect();
-        if (rect.width === 0 || rect.height === 0) return false;
-        
-        // 检查是否在视口内（对于position: absolute/fixed的元素）
-        const position = style.position;
-        if (position === 'absolute' || position === 'fixed') {
-            // 检查是否在视口范围内
-            const viewportWidth = window.innerWidth || document.documentElement.clientWidth;
-            const viewportHeight = window.innerHeight || document.documentElement.clientHeight;
-            
-            // 如果元素完全在视口外，视为不可见
-            if (rect.right < 0 || rect.bottom < 0 || rect.left > viewportWidth || rect.top > viewportHeight) {
-                return false;
-            }
-        }
-        
-        // 递归检查父元素可见性（如果父元素隐藏，子元素也不可见）
-        let parent = el.parentElement;
-        let depth = 0;
-        while (parent && parent !== document.body && depth < 10) {
-            const parentStyle = window.getComputedStyle(parent);
-            if (parentStyle.display === 'none' || parentStyle.visibility === 'hidden') {
-                return includeForcedHidden;
-            }
-            const parentOpacity = parseFloat(parentStyle.opacity);
-            if (!isNaN(parentOpacity) && parentOpacity === 0) {
-                return includeForcedHidden;
-            }
-            parent = parent.parentElement;
-            depth++;
-        }
-        
-        // 检查文本内容（对于文本节点）
-        if (el.nodeType === Node.TEXT_NODE) {
-            const text = el.textContent.trim();
-            if (!text || text.length === 0) return false;
-        } else if (el.nodeType === Node.ELEMENT_NODE) {
-            // 对于元素节点，检查是否有实际文本内容
-            const text = el.textContent.trim();
-            if (!text || text.length === 0) {
-                // 如果没有文本内容，检查是否有可见的子元素
-                const children = Array.from(el.children);
-                const hasVisibleChild = children.some(child => {
-                    const childStyle = window.getComputedStyle(child);
-                    return childStyle.display !== 'none' && childStyle.visibility !== 'hidden';
-                });
-                if (!hasVisibleChild) return false;
-            }
-        }
-        
-        return true;
-    }
-
-    function levenshtein(s, t) {
+        return null;
+    };
+    const levenshtein = window.SF_UTILS?.levenshtein || function(s, t) {
         if (s === t) return 0;
         if (s.length === 0) return t.length;
         if (t.length === 0) return s.length;
@@ -498,73 +67,37 @@
             const tmp = v0; v0 = v1; v1 = tmp;
         }
         return v0[s.length];
-    }
-
-    // 验证 Range 对象是否有效（用于检测 DOM 变化）
-    function isRangeValid(range) {
+    };
+    const isRangeValid = window.SF_UTILS?.isRangeValid || function(range) {
         try {
-            // 检查 Range 对象是否仍然有效
             const rect = range.getBoundingClientRect();
-            // 有效的 Range 应该有尺寸或者至少能获取矩形
             return rect !== null && rect !== undefined;
-        } catch(e) {
-            // Range 已失效（节点被删除或替换）
+        } catch (e) {
             return false;
         }
-    }
-    
-    // 显示内容变化警告提示
-    function showContentChangedWarning() {
-        const msg = CONFIG.lang === 'zh' ? 
-            '⚠️ 页面内容已变化，请重新搜索' : 
-            '⚠️ Page content changed, please search again';
+    };
+    const showContentChangedWarning = function() {
+        if (window.SF_UTILS?.showContentChangedWarning) {
+            window.SF_UTILS.showContentChangedWarning(toast, CONFIG);
+        } else {
+            const msg = CONFIG.lang === 'zh' ? '⚠️ 页面内容已变化，请重新搜索' : '⚠️ Page content changed, please search again';
         toast.textContent = msg;
         toast.classList.add('visible');
         setTimeout(() => toast.classList.remove('visible'), 3000);
     }
-    
-    // 检测特殊页面类型
-    function detectSpecialPage() {
-        const url = window.location.href;
-        const host = window.location.hostname;
-        
-        // 检测 PDF 页面
-        if (url.includes('.pdf') || 
-            url.includes('chrome-extension://') && document.querySelector('embed[type="application/pdf"]') ||
-            document.querySelector('embed[type="application/pdf"]')) {
-            return {
-                type: 'pdf',
-                message: CONFIG.lang === 'zh' ? 
-                    '⚠️ PDF 文档暂不支持搜索\n请使用 Chrome 内置搜索（Ctrl+F）或下载后使用专业 PDF 工具' :
-                    '⚠️ PDF search not supported yet\nPlease use Chrome\'s built-in search (Ctrl+F) or download and use a PDF tool'
-            };
-        }
-        
-        // 检测 Google Docs / Sheets / Slides
-        if (host.includes('docs.google.com')) {
-            const docType = url.includes('/document/') ? 'Docs' :
-                          url.includes('/spreadsheets/') ? 'Sheets' :
-                          url.includes('/presentation/') ? 'Slides' :
-                          'Docs';
-            return {
-                type: 'google-docs',
-                message: CONFIG.lang === 'zh' ?
-                    `⚠️ Google ${docType} 暂不支持搜索\n原因：Google 使用特殊渲染技术，出于安全考虑限制扩展访问\n建议使用 Google ${docType} 自带搜索功能（Ctrl+F）` :
-                    `⚠️ Google ${docType} search not supported\nReason: Google uses special rendering technology and restricts extension access for security\nPlease use Google ${docType}'s built-in search (Ctrl+F)`
-            };
-        }
-        
-        return null;
-    }
-    
-    // 显示特殊页面警告
-    function showSpecialPageWarning(info) {
+    };
+    const detectSpecialPage = function() {
+        return window.SF_UTILS?.detectSpecialPage ? window.SF_UTILS.detectSpecialPage(CONFIG) : null;
+    };
+    const showSpecialPageWarning = function(info) {
+        if (window.SF_UTILS?.showSpecialPageWarning) {
+            window.SF_UTILS.showSpecialPageWarning(toast, info);
+        } else {
         toast.textContent = info.message;
         toast.classList.add('visible');
-        toast.style.whiteSpace = 'pre-line'; // 支持换行
+            toast.style.whiteSpace = 'pre-line';
         toast.style.maxWidth = '400px';
         toast.style.textAlign = 'left';
-        // 显示更长时间
         setTimeout(() => {
             toast.classList.remove('visible');
             toast.style.whiteSpace = '';
@@ -572,6 +105,46 @@
             toast.style.textAlign = '';
         }, 5000);
     }
+    };
+
+    // 使用模块化的可见性判断函数（如果模块未加载，使用后备函数）
+    const isNaturallyHidden = function(el) {
+        if (window.SF_VISIBILITY?.isNaturallyHidden) {
+            return window.SF_VISIBILITY.isNaturallyHidden(el);
+        }
+        // 后备实现（简化版）
+        if (!el) return false;
+        const style = window.getComputedStyle(el);
+        const tagName = el.tagName ? el.tagName.toLowerCase() : '';
+        const className = el.className || '';
+        if (tagName === 'menu' || tagName === 'nav' || className.toLowerCase().includes('menu') || className.toLowerCase().includes('dropdown')) {
+            if (style.display === 'none' || style.visibility === 'hidden') return true;
+        }
+        const maxHeight = style.maxHeight;
+        const overflow = style.overflow || style.overflowY;
+        if (maxHeight === '0px' && (overflow === 'hidden' || overflow === 'auto')) return true;
+        if (style.height === '0px' && (overflow === 'hidden' || overflow === 'auto')) return true;
+        return false;
+    };
+    const isVisible = function(el, includeForcedHidden = false) {
+        if (window.SF_VISIBILITY?.isVisible) {
+            return window.SF_VISIBILITY.isVisible(el, includeForcedHidden, HOST_ID, BTN_ID);
+        }
+        // 后备实现（简化版）
+        if (!el) return false;
+        if (el.id === HOST_ID || el.id === BTN_ID || el.closest('#' + HOST_ID)) return false;
+        const style = window.getComputedStyle(el);
+        if (style.display === 'none' || style.visibility === 'hidden') return includeForcedHidden;
+        const opacity = parseFloat(style.opacity);
+        if (isNaN(opacity) || opacity === 0) return includeForcedHidden;
+        const rect = el.getBoundingClientRect();
+        if (rect.width === 0 || rect.height === 0) return false;
+        return true;
+    };
+
+    /********************
+      3. UI 构建 (UI Construction)
+    ********************/
 
     /********************
       3. UI 构建 (UI Construction)
@@ -597,7 +170,16 @@
         mutationObserver: null,
         refreshTimer: null,
         observeTimeout: null,
-        refreshRetryCount: 0
+        refreshRetryCount: 0,
+        // 切换相关状态
+        switchRefreshTimer: null,
+        // 自动刷新标志（用于区分用户主动操作和自动刷新）
+        isAutoRefreshing: false,
+        // 页面加载状态监测
+        pageLoadStatus: 'loading', // 'loading' | 'complete'
+        searchCompleteStatus: 'incomplete', // 'incomplete' | 'complete'
+        lastContentChangeTime: 0,
+        stableSearchCheckTimer: null
     };
 
     function tryInit() {
@@ -780,10 +362,17 @@
             input[type="text"] {
                 width: 100%; background: rgba(255,255,255,0.1); border: 2px solid transparent;
                 color: inherit; padding: 4px 32px 4px 6px; border-radius: 6px; outline: none;
-                transition: border-color 0.2s; font-size: 12px;
+                transition: border-color 0.2s, background-color 0.3s; font-size: 12px;
             }
             input[type="text"]:focus { border-color: var(--sf-accent); }
             input[type="text"].warn-hidden { border-color: var(--sf-accent); border-style: dashed; }
+            /* 加载状态提示：浅红色表示还在加载，浅绿色表示加载完成 */
+            input[type="text"].status-loading { 
+                background: rgba(255, 87, 34, 0.15) !important; /* 浅红色 */
+            }
+            input[type="text"].status-complete { 
+                background: rgba(76, 175, 80, 0.15) !important; /* 浅绿色 */
+            }
 
             .sf-count { position: absolute; right: 6px; font-size: 10px; opacity: 0.7; pointer-events: none; transition: opacity 0.2s; }
             .sf-loading {
@@ -970,73 +559,256 @@
                 console.log('[Super Find Bar] No search results to locate');
                 return;
             }
-            
+
             // 确保idx有效
             if (state.idx < 0 || state.idx >= state.ranges.length) {
                 console.log('[Super Find Bar] Invalid index:', state.idx, 'total:', state.ranges.length);
                 return;
             }
-            
+
             const currentRange = state.ranges[state.idx];
             if (!currentRange || !currentRange.range) {
                 console.log('[Super Find Bar] Invalid range at index:', state.idx);
                 return;
             }
-            
+
             // 锁定当前索引，防止在定位期间被修改
             const lockedIdx = state.idx;
             const lockedRange = currentRange.range;
-            
+
             // 设置雷达定位标志，防止highlightAll()中的滚动冲突
             state.isRadarLocating = true;
-            
+
             try {
+                // 检测目标元素是否为隐藏的菜单/下拉框/手风琴，如果是则尝试展开
+                let shouldExpand = false;
+                let expandTarget = null;
+                
+                if (currentRange.isInput) {
+                    // 输入框类型：检查输入框的父元素
+                    expandTarget = currentRange.node.parentElement;
+                } else {
+                    // 普通文本节点：获取包含文本的元素
+                    const container = lockedRange.startContainer.nodeType === Node.TEXT_NODE
+                        ? lockedRange.startContainer.parentElement
+                        : lockedRange.startContainer;
+                    expandTarget = container;
+                }
+                
+                // 检查是否需要展开
+                if (expandTarget) {
+                    // 检查元素是否被隐藏（自然隐藏或强制隐藏）
+                    const isHidden = !isVisible(expandTarget, false);
+                    const isNaturallyHiddenEl = isNaturallyHidden(expandTarget);
+                    
+                    if (isHidden || isNaturallyHiddenEl) {
+                        shouldExpand = true;
+                    }
+                }
+                
+                // 如果需要展开，尝试触发展开操作
+                if (shouldExpand && expandTarget) {
+                    try {
+                        // 方法1：查找可点击的父元素（但不包括链接，因为链接会触发页面跳转）
+                        // 对于链接，我们只触发 mouseenter/focus 事件来展开菜单，而不点击
+                        const clickableParent = expandTarget.closest('button, [role="button"], [onclick], .dropdown-toggle, [data-toggle], [data-bs-toggle]');
+                        if (clickableParent && clickableParent.tagName !== 'A') {
+                            // 非链接元素：可以安全点击
+                            clickableParent.click();
+                            shouldExpand = false; // 已触发，不需要其他方法
+                        } else {
+                            // 检查是否是链接，如果是链接，只触发 mouseenter/focus，不点击
+                            const linkParent = expandTarget.closest('a');
+                            if (linkParent) {
+                                // 对于链接，触发 mouseenter 和 focus 事件来展开菜单，但不触发点击
+                                const mouseenterEvent = new MouseEvent('mouseenter', {
+                                    bubbles: true,
+                                    cancelable: true,
+                                    view: window
+                                });
+                                linkParent.dispatchEvent(mouseenterEvent);
+                                
+                                const focusEvent = new FocusEvent('focus', {
+                                    bubbles: true,
+                                    cancelable: true,
+                                    view: window
+                                });
+                                linkParent.dispatchEvent(focusEvent);
+                                
+                                // 如果链接有父菜单容器，也尝试触发父容器的 mouseenter
+                                const menuContainer = linkParent.closest('nav, [role="menu"], [role="navigation"], .menu, .dropdown, .navbar');
+                                if (menuContainer && menuContainer !== linkParent) {
+                                    const containerMouseenter = new MouseEvent('mouseenter', {
+                                        bubbles: true,
+                                        cancelable: true,
+                                        view: window
+                                    });
+                                    menuContainer.dispatchEvent(containerMouseenter);
+                                }
+                                
+                                shouldExpand = false; // 已触发，不需要其他方法
+                            }
+                        }
+                        
+                        // 方法2：设置 aria-expanded 属性（适用于可访问性菜单）
+                        if (shouldExpand && expandTarget.hasAttribute('aria-expanded')) {
+                            expandTarget.setAttribute('aria-expanded', 'true');
+                            shouldExpand = false;
+                        }
+                        
+                        // 方法3：添加常见的展开类名（适用于 Bootstrap 等框架）
+                        if (shouldExpand) {
+                            const commonExpandClasses = ['open', 'active', 'show', 'expanded', 'visible'];
+                            for (const className of commonExpandClasses) {
+                                if (expandTarget.classList.contains(className.replace('expanded', '')) || 
+                                    expandTarget.parentElement?.classList.contains(className)) {
+                                    expandTarget.classList.add(className);
+                                    expandTarget.parentElement?.classList.add(className);
+                                    shouldExpand = false;
+                                    break;
+                                }
+                            }
+                        }
+                        
+                        // 方法4：触发 mouseenter 事件（适用于 hover 菜单）
+                        if (shouldExpand) {
+                            const mouseenterEvent = new MouseEvent('mouseenter', {
+                                bubbles: true,
+                                cancelable: true,
+                                view: window
+                            });
+                            expandTarget.dispatchEvent(mouseenterEvent);
+                            
+                            // 也尝试触发父菜单容器的 mouseenter
+                            const menuContainer = expandTarget.closest('nav, [role="menu"], [role="navigation"], .menu, .dropdown, .navbar');
+                            if (menuContainer && menuContainer !== expandTarget) {
+                                const containerMouseenter = new MouseEvent('mouseenter', {
+                                    bubbles: true,
+                                    cancelable: true,
+                                    view: window
+                                });
+                                menuContainer.dispatchEvent(containerMouseenter);
+                            }
+                        }
+                    } catch (e) {
+                        console.warn('[Super Find Bar] Failed to expand element:', e);
+                    }
+                }
+                
                 // 先滚动到该位置，确保range可见
                 scrollToRangeImmediate(lockedRange);
-                
-                // 等待滚动完成后再显示涟漪
+
+                // 等待滚动完成后再显示涟漪（如果需要展开，延迟更长时间）
+                const delay = shouldExpand ? 300 : 100;
                 setTimeout(() => {
                     try {
-                        const rect = lockedRange.getBoundingClientRect();
                         let rippleLeft = 0;
                         let rippleTop = 0;
-                        
-                        if (rect.width === 0 && rect.height === 0) {
-                            // 如果range不可见，尝试获取包含它的元素
-                            const container = lockedRange.startContainer.nodeType === Node.TEXT_NODE 
-                                ? lockedRange.startContainer.parentElement 
-                                : lockedRange.startContainer;
-                            if (container) {
-                                const containerRect = container.getBoundingClientRect();
-                                rippleLeft = containerRect.left + containerRect.width / 2;
-                                rippleTop = containerRect.top + containerRect.height / 2;
-                            } else {
-                                console.log('[Super Find Bar] Cannot find container element');
+
+                        // 检查是否为输入框类型
+                        if (currentRange.isInput) {
+                            // 输入框类型：计算匹配文字的精确位置
+                            const inputEl = currentRange.node;
+                            if (!inputEl || !inputEl.parentNode) {
+                                console.log('[Super Find Bar] Input element not found');
                                 state.isRadarLocating = false;
                                 return;
                             }
+
+                            const rect = inputEl.getBoundingClientRect();
+                            if (rect.width === 0 && rect.height === 0) {
+                                console.log('[Super Find Bar] Input element has zero size');
+                                state.isRadarLocating = false;
+                                return;
+                            }
+
+                            // 计算匹配文字在输入框中的位置
+                            const matchStart = currentRange.matchStart;
+                            const matchEnd = currentRange.matchEnd;
+                            const inputValue = currentRange.inputValue;
+                            const matchedText = inputValue.substring(matchStart, matchEnd);
+                            const textBeforeMatch = inputValue.substring(0, matchStart);
+
+                            // 创建临时测量元素，获取输入框的样式
+                            const tempSpan = document.createElement('span');
+                            tempSpan.style.cssText = `
+                                position: absolute;
+                                visibility: hidden;
+                                white-space: pre;
+                                font-family: ${window.getComputedStyle(inputEl).fontFamily};
+                                font-size: ${window.getComputedStyle(inputEl).fontSize};
+                                font-weight: ${window.getComputedStyle(inputEl).fontWeight};
+                                font-style: ${window.getComputedStyle(inputEl).fontStyle};
+                                letter-spacing: ${window.getComputedStyle(inputEl).letterSpacing};
+                                text-transform: ${window.getComputedStyle(inputEl).textTransform};
+                            `;
+                            document.body.appendChild(tempSpan);
+
+                            // 测量匹配前文字的宽度
+                            tempSpan.textContent = textBeforeMatch;
+                            const textBeforeWidth = tempSpan.offsetWidth;
+
+                            // 测量匹配文字的宽度
+                            tempSpan.textContent = matchedText;
+                            const matchTextWidth = tempSpan.offsetWidth;
+
+                            // 清理临时元素
+                            document.body.removeChild(tempSpan);
+
+                            // 获取输入框的样式信息
+                            const inputStyle = window.getComputedStyle(inputEl);
+                            const paddingLeft = parseFloat(inputStyle.paddingLeft) || 0;
+                            const paddingTop = parseFloat(inputStyle.paddingTop) || 0;
+                            const borderLeft = parseFloat(inputStyle.borderLeftWidth) || 0;
+                            const borderTop = parseFloat(inputStyle.borderTopWidth) || 0;
+                            const lineHeight = parseFloat(inputStyle.lineHeight) || parseFloat(inputStyle.fontSize);
+
+                            // 计算匹配文字的中心点坐标
+                            const highlightLeft = rect.left + paddingLeft + borderLeft + textBeforeWidth;
+                            const highlightTop = rect.top + paddingTop + borderTop;
+                            rippleLeft = highlightLeft + matchTextWidth / 2;
+                            rippleTop = highlightTop + parseFloat(lineHeight) / 2;
                         } else {
-                            rippleLeft = rect.left + rect.width / 2;
-                            rippleTop = rect.top + rect.height / 2;
+                            // 普通文本节点：使用 Range 的边界矩形
+                            const rect = lockedRange.getBoundingClientRect();
+
+                            if (rect.width === 0 && rect.height === 0) {
+                                // 如果range不可见，尝试获取包含它的元素
+                                const container = lockedRange.startContainer.nodeType === Node.TEXT_NODE
+                                    ? lockedRange.startContainer.parentElement
+                                    : lockedRange.startContainer;
+                                if (container) {
+                                    const containerRect = container.getBoundingClientRect();
+                                    rippleLeft = containerRect.left + containerRect.width / 2;
+                                    rippleTop = containerRect.top + containerRect.height / 2;
+                                } else {
+                                    console.log('[Super Find Bar] Cannot find container element');
+                                    state.isRadarLocating = false;
+                                    return;
+                                }
+                            } else {
+                                rippleLeft = rect.left + rect.width / 2;
+                                rippleTop = rect.top + rect.height / 2;
+                            }
                         }
-                        
+
                         // 计算屏幕对角线长度，缩小范围以减少闪烁
                         const screenWidth = window.innerWidth;
                         const screenHeight = window.innerHeight;
                         const screenDiagonal = Math.sqrt(screenWidth * screenWidth + screenHeight * screenHeight);
-                        
+
                         // 起始大小：30px（像水滴刚接触湖面）
                         const rippleStartSize = 30;
-                        
+
                         // 缩小扩散范围：0.5倍屏幕对角线，减少对页面的影响
                         const rippleMaxSize = screenDiagonal * 0.5; // 0.5倍，足够覆盖大部分屏幕但不会太大
                         const maxScale = rippleMaxSize / rippleStartSize;
-                        
+
                         // 创建涟漪容器，大小包含最大扩散范围
                         const containerSize = rippleMaxSize;
                         const containerLeft = rippleLeft - containerSize / 2;
                         const containerTop = rippleTop - containerSize / 2;
-                        
+
                         const rippleContainer = document.createElement('div');
                         rippleContainer.className = 'sf-ripple-container';
                         rippleContainer.style.left = containerLeft + 'px';
@@ -1044,7 +816,7 @@
                         rippleContainer.style.width = containerSize + 'px';
                         rippleContainer.style.height = containerSize + 'px';
                         rippleContainer.style.setProperty('--ripple-max-scale', maxScale.toString());
-                        
+
                         // 创建5层涟漪，每层有延迟，像水滴效果
                         const layerCount = 5;
                         const layerDelay = 0.12; // 每层延迟0.12秒（加快速度）
@@ -1056,11 +828,11 @@
                             'rgba(30, 160, 255, 0.55)',
                             'rgba(40, 170, 255, 0.5)'
                         ];
-                        
+
                         // 涟漪层相对于容器中心的位置
                         const layerLeft = (containerSize - rippleStartSize) / 2;
                         const layerTop = (containerSize - rippleStartSize) / 2;
-                        
+
                         for (let i = 0; i < layerCount; i++) {
                             const layer = document.createElement('div');
                             layer.className = 'sf-ripple-layer';
@@ -1073,9 +845,9 @@
                             layer.style.animationDelay = (i * layerDelay) + 's';
                             rippleContainer.appendChild(layer);
                         }
-                        
+
                         document.body.appendChild(rippleContainer);
-                        
+
                         // 动画结束后立即移除，避免闪烁
                         // 动画时长1.8s，加上最后一层的延迟，总共约2.16秒（比之前快约33%）
                         const totalDuration = 1800 + (layerCount - 1) * layerDelay * 1000 + 100;
@@ -1193,14 +965,14 @@
         switchWrapper.style.display = 'flex';
         switchWrapper.style.justifyContent = 'flex-end';
         switchWrapper.style.width = '28px';
-        
+
         const switchLabel = document.createElement('label');
         switchLabel.className = 'sf-switch-label';
         switchLabel.style.position = 'relative';
         switchLabel.style.display = 'inline-block';
         switchLabel.style.width = '28px';
         switchLabel.style.height = '16px';
-        
+
         const chk = document.createElement('input');
         chk.type = 'checkbox';
         chk.checked = checked;
@@ -1208,21 +980,21 @@
         chk.style.width = '0';
         chk.style.height = '0';
         chk.onchange = onChange;
-        
+
         const slider = document.createElement('span');
         slider.className = 'sf-slider';
         slider.style.cssText = 'position:absolute;cursor:pointer;top:0;left:0;right:0;bottom:0;background-color:rgba(255,255,255,0.2);transition:.3s;border-radius:16px;';
         slider.style.background = checked ? 'var(--sf-accent)' : 'rgba(255,255,255,0.2)';
-        
+
         const sliderBefore = document.createElement('span');
         sliderBefore.style.cssText = 'position:absolute;content:"";height:12px;width:12px;left:2px;bottom:2px;background-color:white;transition:.3s;border-radius:50%;box-shadow:0 1px 2px rgba(0,0,0,0.2);';
         sliderBefore.style.transform = checked ? 'translateX(12px)' : 'translateX(0)';
-        
+
         chk.addEventListener('change', () => {
             slider.style.background = chk.checked ? 'var(--sf-accent)' : 'rgba(255,255,255,0.2)';
             sliderBefore.style.transform = chk.checked ? 'translateX(12px)' : 'translateX(0)';
         });
-        
+
         slider.appendChild(sliderBefore);
         switchLabel.append(chk, slider);
         switchWrapper.appendChild(switchLabel);
@@ -1247,7 +1019,7 @@
         headerLabel.textContent = CONFIG.lang === 'zh' ? '显示在工具栏' : 'Show in Toolbar';
         toolTitle.append(titleText, headerLabel);
         grpTools.appendChild(toolTitle);
-        
+
         // 按照 options 页面顺序：matchCase, wholeWord, ignoreAccents, highlightAll, regex, includeHidden, fuzzy
         const toolList = ['matchCase', 'wholeWord', 'ignoreAccents', 'highlightAll', 'regex', 'includeHidden', 'fuzzy'];
         toolList.forEach(key => {
@@ -1257,7 +1029,7 @@
             lbl.className = 'sf-adv-lbl';
             lbl.textContent = t(`opts.${key}`);
             lbl.style.flex = '1';
-            
+
             const switchCtrl = createCompactSwitch(CONFIG.search.pinned.includes(key), (e) => {
                 if (e.target.checked) {
                     if (!CONFIG.search.pinned.includes(key)) {
@@ -1280,10 +1052,10 @@
                     renderAdvPanel();
                 }
             });
-            
+
             row.append(lbl, switchCtrl.wrapper);
             grpTools.append(row);
-            
+
             // 容错字符数（作为模糊搜索的子项，只有模糊搜索在工具栏中时才显示）
             if (key === 'fuzzy' && CONFIG.search.pinned.includes('fuzzy')) {
         const fuzzyToleranceRow = document.createElement('div');
@@ -1303,7 +1075,7 @@
         const fuzzyRange = document.createElement('input');
         fuzzyRange.type = 'range';
         fuzzyRange.min = '0';
-        fuzzyRange.max = '15'; // 增加到15（根据现代电脑性能，不限制搜索范围的情况下最大支持15个字符容错）
+                fuzzyRange.max = '15'; // 增加到15（根据现代电脑性能，不限制搜索范围的情况下最大支持15个字符容错）
         fuzzyRange.step = '1';
         fuzzyRange.value = CONFIG.search.fuzzyTolerance;
                 fuzzyRange.style.width = '60px';
@@ -1318,9 +1090,9 @@
         
         const toleranceValue = document.createElement('span');
         toleranceValue.textContent = CONFIG.search.fuzzyTolerance;
-            toleranceValue.style.minWidth = '14px';
+                toleranceValue.style.minWidth = '14px';
         toleranceValue.style.textAlign = 'center';
-            toleranceValue.style.fontSize = '9px';
+                toleranceValue.style.fontSize = '9px';
         
         toleranceControl.append(fuzzyRange, toleranceValue);
         fuzzyToleranceRow.append(toleranceLabel, toleranceControl);
@@ -1360,7 +1132,7 @@
         perfInp.style.fontSize = '9px';
         perfInp.onchange = (e) => {
             let v = parseInt(e.target.value);
-            if(isNaN(v) || v < 0) v = 3000;
+            if (isNaN(v) || v < 0) v = 3000;
             CONFIG.search.perfThreshold = v;
             // advance中的修改只保存到临时配置，不影响options
             saveSessionConfig();
@@ -1397,17 +1169,17 @@
         const scrollLbl = document.createElement('span');
         scrollLbl.className = 'sf-adv-lbl';
         scrollLbl.textContent = CONFIG.lang === 'zh' ? '滚动行为' : 'Scroll Behavior';
-        
+
         const scrollCtrl = document.createElement('div');
         scrollCtrl.style.display = 'flex';
         scrollCtrl.style.gap = '8px';
         scrollCtrl.style.marginLeft = 'auto';
-        
+
         // 确保有默认值
         if (!CONFIG.scroll.behavior) {
             CONFIG.scroll.behavior = 'always-center';
         }
-        
+
         const scrollAlways = document.createElement('label');
         scrollAlways.style.display = 'flex';
         scrollAlways.style.alignItems = 'center';
@@ -1428,7 +1200,7 @@
             showSuccessToast(t('saved'));
         };
         scrollAlways.append(radioAlways, document.createTextNode(CONFIG.lang === 'zh' ? '始终居中' : 'Always Center'));
-        
+
         const scrollHidden = document.createElement('label');
         scrollHidden.style.display = 'flex';
         scrollHidden.style.alignItems = 'center';
@@ -1449,7 +1221,7 @@
             showSuccessToast(t('saved'));
         };
         scrollHidden.append(radioHidden, document.createTextNode(CONFIG.lang === 'zh' ? '仅不可见时' : 'Only When Hidden'));
-        
+
         scrollCtrl.append(scrollAlways, scrollHidden);
         scrollRow.append(scrollLbl, scrollCtrl);
         grpSearch.appendChild(scrollRow);
@@ -1487,7 +1259,7 @@
             colorCircle.appendChild(colorInp);
             colorGrid.appendChild(colorCircle);
         });
-        
+
         const btnResetColors = document.createElement('button');
         btnResetColors.innerHTML = '↺';
         btnResetColors.title = CONFIG.lang === 'zh' ? '重置为默认' : 'Reset Colors';
@@ -1509,7 +1281,7 @@
             }
         };
         colorGrid.appendChild(btnResetColors);
-        
+
         colorRow.append(colorLbl, colorGrid);
         grpSearch.appendChild(colorRow);
 
@@ -1526,13 +1298,13 @@
         const coordLbl = document.createElement('span');
         coordLbl.className = 'sf-adv-lbl';
         coordLbl.textContent = CONFIG.lang === 'zh' ? '坐标轴位置' : 'Axis Position';
-        
+
         const coordCtrl = document.createElement('div');
         coordCtrl.style.display = 'flex';
         coordCtrl.style.flexDirection = 'column';
         coordCtrl.style.gap = '4px';
         coordCtrl.style.marginLeft = 'auto';
-        
+
         // X 轴位置（包含显示开关）
         const xAxisCtrl = document.createElement('div');
         xAxisCtrl.style.display = 'flex';
@@ -1592,7 +1364,7 @@
             drawTickBar();
         });
         xAxisCtrl.append(xAxisLabel, xAxisTop, xAxisBottom, xAxisShowSwitch.wrapper);
-        
+
         // Y 轴位置（包含显示开关）
         const yAxisCtrl = document.createElement('div');
         yAxisCtrl.style.display = 'flex';
@@ -1653,7 +1425,7 @@
             drawTickBar();
         });
         yAxisCtrl.append(yAxisLabel, yAxisLeft, yAxisRight, yAxisShowSwitch.wrapper);
-        
+
         coordCtrl.append(xAxisCtrl, yAxisCtrl);
         coordRow.append(coordLbl, coordCtrl);
         grpLayout.appendChild(coordRow);
@@ -1752,12 +1524,12 @@
         const themeLbl = document.createElement('span');
         themeLbl.className = 'sf-adv-lbl';
         themeLbl.textContent = CONFIG.lang === 'zh' ? '主题颜色' : 'Theme Colors';
-        
+
         const themeCtrl = document.createElement('div');
         themeCtrl.style.display = 'flex';
         themeCtrl.style.gap = '4px';
         themeCtrl.style.alignItems = 'center';
-        
+
         const bgLabel = document.createElement('span');
         bgLabel.textContent = CONFIG.lang === 'zh' ? '背景' : 'BG';
         bgLabel.style.fontSize = '9px';
@@ -1804,18 +1576,18 @@
             saveSessionConfig();
             showSuccessToast(t('saved'));
         };
-        
+
         themeCtrl.append(bgLabel, bgInp, txtLabel, txtInp, opLabel, opInp);
         themeRow.append(themeLbl, themeCtrl);
         grpLayout.appendChild(themeRow);
-
+        
         // 语言切换（按钮形式）
         const langRow = document.createElement('div');
         langRow.className = 'sf-adv-row';
         const langLbl = document.createElement('span');
         langLbl.className = 'sf-adv-lbl';
         langLbl.textContent = CONFIG.lang === 'zh' ? '语言' : 'Language';
-        
+
         const langSwitch = document.createElement('div');
         langSwitch.style.display = 'flex';
         langSwitch.style.gap = '3px';
@@ -1930,21 +1702,21 @@
     function mkBtn(html, title, cb, cls) {
         const b = document.createElement('button');
         b.innerHTML = html; b.title = title; b.onclick = cb;
-        if(cls) b.className = cls; return b;
+        if (cls) b.className = cls; return b;
     }
     function mkChk(key, label) {
         const l = document.createElement('label'); l.className = 'sf-chk';
         // 只有 pinned 数组中的选项才能被勾选，且读取当前勾选状态
-        const c = document.createElement('input'); 
-        c.type='checkbox'; 
+        const c = document.createElement('input');
+        c.type = 'checkbox';
         c.checked = CONFIG.search.pinned.includes(key) ? CONFIG.search[key] : false;
         c.disabled = !CONFIG.search.pinned.includes(key); // 不在工具栏中的选项禁用
         c.onchange = () => {
             // 只有 pinned 中的选项才能修改勾选状态
             if (CONFIG.search.pinned.includes(key)) {
-                CONFIG.search[key] = c.checked;
-                saveConfig();
-                updatePlaceholder();
+            CONFIG.search[key] = c.checked;
+            saveConfig();
+            updatePlaceholder();
                 // 实时更新搜索结果：如果有搜索词，立即触发搜索
                 if (input.value && input.value.trim() && !CONFIG.search.fuzzy && !state.manualMode) {
                     triggerSearch();
@@ -1971,7 +1743,7 @@
                 advPanel.style.position = 'fixed';
                 advPanel.style.right = right + 'px';
                 advPanel.style.left = 'auto';
-                
+
                 // 根据搜索栏位置决定弹窗显示方向
                 if (CONFIG.layout.position === 'top') {
                     // 搜索栏在顶部，弹窗显示在按钮下方
@@ -1991,8 +1763,8 @@
         }
     }
     function setPos(pos, mode) {
-        CONFIG.layout.position = pos; 
-        CONFIG.layout.mode = mode; 
+        CONFIG.layout.position = pos;
+        CONFIG.layout.mode = mode;
         // advance中的修改只保存到临时配置，不影响options
         saveSessionConfig();
         applyLayout();
@@ -2004,7 +1776,7 @@
         root.className = 'sf-box';
         root.classList.add(`mode-${CONFIG.layout.mode}`);
         root.classList.add(`sf-pos-${CONFIG.layout.position}`);
-        if(state.visible) root.classList.add('show');
+        if (state.visible) root.classList.add('show');
         applyTheme();
         
         // 布局切换后强制重绘坐标轴（修复X轴自适应问题）
@@ -2060,10 +1832,10 @@
     function checkPageSize() {
         const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, null, false);
         let count = 0;
-        while(walker.nextNode()) count++;
+        while (walker.nextNode()) count++;
         state.nodeCount = count;
         state.manualMode = count > CONFIG.search.perfThreshold;
-        if(state.manualMode && !state.hasWarned) {
+        if (state.manualMode && !state.hasWarned) {
              toast.textContent = `Page huge (${count} nodes). Manual mode on.`;
              toast.classList.add('visible');
              setTimeout(() => toast.classList.remove('visible'), 3000);
@@ -2080,13 +1852,13 @@
     function startMutationObserver() {
         // 如果已经有监听器在运行，不重复启动
         if (state.mutationObserver) return;
-        
+
         // 重置重试计数
         state.refreshRetryCount = 0;
-        
+
         state.mutationObserver = new MutationObserver((mutations) => {
             let hasNewText = false;
-            
+
             mutations.forEach(mutation => {
                 mutation.addedNodes.forEach(node => {
                     // 检测是否有新的文本节点或包含文本的元素
@@ -2100,24 +1872,28 @@
                     }
                 });
             });
-            
-            // 如果检测到新文本内容，触发刷新
-            // 移除时间限制：只要搜索栏打开且有搜索结果，就应该响应内容变化
+
+            // 如果检测到新文本内容，更新加载状态并触发刷新
             if (hasNewText) {
+                // 更新内容变化时间
+                state.lastContentChangeTime = Date.now();
+                // 标记页面还在加载，搜索可能不完整
+                updateLoadStatus('loading', 'incomplete');
+                
                 // 检查是否有搜索词（避免在搜索栏关闭时刷新）
                 if (input && input.value.trim()) {
                     debouncedRefreshSearch('mutation');
                 }
             }
         });
-        
+
         // 监听document.body的所有子节点变化和子树变化
         state.mutationObserver.observe(document.body, {
             childList: true,
             subtree: true,
             characterData: false // 不监听文本内容变化，只监听节点添加
         });
-        
+
         // 设置监听超时：30秒后自动停止（延长监听时间，确保能检测到延迟加载的内容）
         // 注意：监听器会在搜索栏关闭时自动停止，这里只是作为安全机制
         if (state.observeTimeout) {
@@ -2126,6 +1902,29 @@
         state.observeTimeout = setTimeout(() => {
             stopMutationObserver();
         }, 30000); // 延长到30秒
+
+        // 启动滚动事件监听器（用于懒加载页面）
+        if (!state.scrollListener) {
+            let scrollDebounceTimer = null;
+            state.scrollListener = () => {
+                // 清除之前的防抖定时器
+                if (scrollDebounceTimer) {
+                    clearTimeout(scrollDebounceTimer);
+                }
+                
+                // 检查是否有搜索词（避免在搜索栏关闭时刷新）
+                if (input && input.value.trim()) {
+                    // 使用防抖（300ms）调用刷新
+                    scrollDebounceTimer = setTimeout(() => {
+                        debouncedRefreshSearch('scroll');
+                        scrollDebounceTimer = null;
+                    }, 300);
+                }
+            };
+            
+            // 监听滚动事件（使用 passive: true 优化性能）
+            window.addEventListener('scroll', state.scrollListener, { passive: true, capture: true });
+        }
     }
 
     // 停止DOM变化监听器
@@ -2138,6 +1937,11 @@
             clearTimeout(state.observeTimeout);
             state.observeTimeout = null;
         }
+        // 停止滚动事件监听器
+        if (state.scrollListener) {
+            window.removeEventListener('scroll', state.scrollListener, { capture: true });
+            state.scrollListener = null;
+        }
         state.refreshRetryCount = 0;
     }
 
@@ -2145,17 +1949,17 @@
     function debouncedRefreshSearch(source) {
         // 如果当前没有搜索词，不刷新
         if (!input || !input.value.trim()) return;
-        
+
         // 清除之前的定时器
         if (state.refreshTimer) {
             clearTimeout(state.refreshTimer);
         }
-        
-        // 限制刷新频率：最小间隔300ms
+
+        // 限制刷新频率：滚动触发使用更短的间隔（200ms），其他使用300ms
         const now = Date.now();
         const timeSinceLastRefresh = now - state.lastSearchTime;
-        const minInterval = 300;
-        
+        const minInterval = source === 'scroll' ? 200 : 300;
+
         if (timeSinceLastRefresh < minInterval) {
             // 延迟执行，确保最小间隔
             state.refreshTimer = setTimeout(() => {
@@ -2174,52 +1978,181 @@
             stopMutationObserver();
             return;
         }
-        
+
+        // 如果正在切换高亮字段，延迟刷新，避免冲突
+        if (state.switchRefreshTimer) {
+            // 用户正在切换，延迟刷新
+            return;
+        }
+
         if (source === 'mutation') {
             state.refreshRetryCount++;
         }
-        
+
         // 记录刷新时间
         state.lastSearchTime = Date.now();
-        
-        // 延迟500ms等待页面内容加载完成
-        await new Promise(r => setTimeout(r, 500));
-        
+
+        // 延迟等待页面内容加载完成：滚动触发使用更短的延迟（200ms），其他使用500ms
+        const delay = source === 'scroll' ? 200 : 500;
+        await new Promise(r => setTimeout(r, delay));
+
         // 如果搜索词已清空，不刷新
         if (!input || !input.value.trim()) return;
-        
+
+        // 如果正在切换高亮字段，不刷新（双重检查，避免冲突）
+        if (state.switchRefreshTimer) {
+            return;
+        }
+
         // 执行搜索（标记为自动刷新）
         const previousCount = state.ranges.length;
         await triggerSearch(true); // true表示这是自动刷新
         const currentCount = state.ranges.length;
-        
+
         // 更新结果数量记录
         state.lastResultCount = currentCount;
         
+        // 更新内容变化时间（滚动触发的内容加载）
+        if (source === 'scroll') {
+            state.lastContentChangeTime = Date.now();
+        }
+
         // 如果结果数量明显增加（增加10%以上），继续监听
-        if (currentCount > previousCount * 1.1 && source === 'mutation') {
-            // 结果增加了，继续监听可能的新内容（重新启动监听器，延长监听时间）
-            startMutationObserver();
+        if (currentCount > previousCount * 1.1) {
+            if (source === 'mutation') {
+                // 结果增加了，继续监听可能的新内容（重新启动监听器，延长监听时间）
+                startMutationObserver();
+            } else if (source === 'scroll') {
+                // 滚动触发的结果增加，也继续监听（重新启动监听器）
+                startMutationObserver();
+            }
         } else if (source === 'mutation') {
             // 结果没有明显增加，但重试次数还没到上限，继续监听（重新启动延长监听时间）
             // 如果重试次数已到上限，会在下次refreshSearch时停止
             if (state.refreshRetryCount < 3) {
                 startMutationObserver();
             }
+        } else if (source === 'scroll') {
+            // 滚动触发的结果没有明显增加，也继续监听（用户可能继续滚动）
+            startMutationObserver();
         }
+    }
+
+    /********************
+      页面加载状态监测 (Page Load Status Monitoring)
+    ********************/
+
+    // 更新加载状态并更新输入框视觉提示
+    function updateLoadStatus(pageStatus, searchStatus) {
+        if (!input) return;
+        
+        // 更新状态
+        if (pageStatus) state.pageLoadStatus = pageStatus;
+        if (searchStatus) state.searchCompleteStatus = searchStatus;
+        
+        // 移除旧的状态类
+        input.classList.remove('status-loading', 'status-complete');
+        
+        // 根据状态添加新的类
+        // 如果页面还在加载或搜索不完整，显示浅红色
+        if (state.pageLoadStatus === 'loading' || state.searchCompleteStatus === 'incomplete') {
+            input.classList.add('status-loading');
+        } else {
+            // 页面已加载且搜索完整，显示浅绿色
+            input.classList.add('status-complete');
+        }
+    }
+
+    // 检查搜索稳定性（判断搜索是否完整）
+    function checkSearchStability(previousCount, currentCount) {
+        // 清除之前的定时器
+        if (state.stableSearchCheckTimer) {
+            clearTimeout(state.stableSearchCheckTimer);
+        }
+        
+        // 如果结果数量增加了，说明还在加载新内容
+        if (currentCount > previousCount) {
+            // 标记搜索不完整
+            updateLoadStatus(null, 'incomplete');
+            // 重置定时器，等待结果稳定
+            state.stableSearchCheckTimer = setTimeout(() => {
+                // 2秒内没有新内容增加，认为搜索已稳定
+                checkPageLoadComplete();
+            }, 2000);
+        } else if (currentCount === previousCount && currentCount > 0) {
+            // 结果数量没有变化，可能已经稳定
+            // 延迟检查，确保真的稳定了
+            state.stableSearchCheckTimer = setTimeout(() => {
+                checkPageLoadComplete();
+            }, 2000);
+        }
+    }
+
+    // 检查页面是否完全加载
+    function checkPageLoadComplete() {
+        const now = Date.now();
+        const timeSinceLastChange = now - state.lastContentChangeTime;
+        
+        // 检查页面 readyState
+        const isPageLoaded = document.readyState === 'complete';
+        
+        // 如果页面已加载，且3秒内没有新内容变化，认为页面已完全加载
+        if (isPageLoaded && timeSinceLastChange > 3000) {
+            updateLoadStatus('complete', 'complete');
+        } else if (isPageLoaded && timeSinceLastChange > 1000) {
+            // 页面已加载，但最近有新内容，搜索可能还不完整
+            updateLoadStatus('complete', 'incomplete');
+        } else {
+            // 页面还在加载
+            updateLoadStatus('loading', 'incomplete');
+        }
+    }
+
+    // 初始化页面加载状态监测
+    function initLoadStatusMonitoring() {
+        // 初始状态：假设还在加载
+        state.pageLoadStatus = document.readyState === 'complete' ? 'complete' : 'loading';
+        state.searchCompleteStatus = 'incomplete';
+        state.lastContentChangeTime = Date.now();
+        
+        // 监听页面加载事件
+        if (document.readyState !== 'complete') {
+            window.addEventListener('load', () => {
+                state.pageLoadStatus = 'complete';
+                // 延迟检查，给页面一些时间加载动态内容
+                setTimeout(() => {
+                    checkPageLoadComplete();
+                }, 1000);
+            }, { once: true });
+        } else {
+            // 页面已经加载完成，延迟检查
+            setTimeout(() => {
+                checkPageLoadComplete();
+            }, 1000);
+        }
+        
+        // 定期检查页面加载状态（每5秒检查一次）
+        setInterval(() => {
+            if (input && input.value.trim()) {
+                checkPageLoadComplete();
+            }
+        }, 5000);
     }
 
     // 切换后检测是否需要刷新
     function checkAndRefreshAfterSwitch() {
         // 如果当前没有搜索结果，不需要刷新
         if (!state.ranges.length || !input.value.trim()) return;
-        
-        // 延迟300ms后检测（给页面加载时间）
-        setTimeout(() => {
-            // 切换后重新启动监听器，延长监听时间
-            // 这样可以检测到切换后触发的页面加载
-            startMutationObserver();
-        }, 300);
+
+        // 注意：切换时不要立即启动监听器，避免在切换过程中触发刷新
+        // 只在用户停止切换一段时间后才启动监听器
+        // 这个函数会在 go() 中被延迟调用（1秒后），所以这里不需要再次延迟
+        if (state.mutationObserver) {
+            // 如果监听器已存在，不重复启动（避免冲突）
+            return;
+        }
+        // 启动监听器，但不会立即触发搜索（只有在检测到DOM变化时才会触发）
+        startMutationObserver();
     }
 
     async function triggerSearch(isAutoRefresh = false) {
@@ -2234,14 +2167,14 @@
             if (oldMarks.length > 0) {
                 oldMarks.forEach(m => {
                     const p = m.parentNode;
-                    if(p) {
+                    if (p) {
                         p.replaceChild(document.createTextNode(m.textContent), m);
                         p.normalize();
                     }
                 });
             }
         }
-        
+
         // 清除输入框高亮覆盖层
         document.querySelectorAll('.sf-input-highlight').forEach(el => {
             if (el._cleanup) el._cleanup();
@@ -2258,7 +2191,7 @@
         const val = input.value;
         // 创建搜索配置，但只使用 pinned 数组中的选项
         const cfg = JSON.parse(JSON.stringify(CONFIG.search));
-        
+
         // 关键逻辑：只有 pinned 数组中的选项才参与搜索筛选
         // 如果选项不在 pinned 中，强制设为 false（不参与搜索）
         const searchOptions = ['matchCase', 'wholeWord', 'highlightAll', 'ignoreAccents', 'regex', 'includeHidden', 'fuzzy'];
@@ -2268,13 +2201,26 @@
             }
         });
 
+        // 自动刷新时：保存当前高亮信息，保持计数显示
+        let preservedIdx = -1;
+        let preservedRange = null;
+        let preservedTotal = 0;
+        if (isAutoRefresh && state.idx >= 0 && state.ranges && state.ranges.length > 0 && state.ranges[state.idx]) {
+            preservedIdx = state.idx;
+            preservedRange = state.ranges[state.idx].range;
+            preservedTotal = state.ranges.length;
+            // 不清空计数显示，保持显示当前序号和总数
+        } else {
+            // 手动搜索时：清空计数显示
+            countDisplay.textContent = '';
+        }
+
         state.ranges = [];
         state.idx = -1;
         if (tickBarX) tickBarX.innerHTML = '';
         if (tickBarY) tickBarY.innerHTML = '';
         toast.classList.remove('visible');
         input.classList.remove('warn-hidden');
-        countDisplay.textContent = '';
 
         if (!val.trim()) {
             loadingInd.style.display = 'none';
@@ -2284,9 +2230,37 @@
         }
 
         loadingInd.style.display = 'block';
+        // 自动刷新时：保持计数显示可见，只降低透明度表示加载中
+        if (isAutoRefresh && preservedIdx >= 0) {
+            countDisplay.style.opacity = '0.6'; // 降低透明度表示正在刷新
+        } else {
         countDisplay.style.opacity = '0';
+        }
 
+        // 实时搜索优先：只在必要时延迟
+        // 对于小页面，立即搜索；对于超大页面，仅在页面未完全加载时等待
+        if (!isAutoRefresh) {
+            // 检查页面加载状态
+            if (document.readyState !== 'complete') {
+                // 页面未完全加载，等待 load 事件（但不强制延迟）
+                await new Promise(resolve => {
+                    if (document.readyState === 'complete') {
+                        resolve();
+                    } else {
+                        window.addEventListener('load', resolve, { once: true });
+                    }
+                });
+            }
+            // 只在超大页面时延迟（避免卡住），小页面立即搜索
+            if (state.nodeCount > CONFIG.search.perfThreshold) {
+                // 超大页面：延迟 300ms 等待动态内容加载
+                await new Promise(r => setTimeout(r, 300));
+            }
+            // 小页面：不延迟，立即搜索（保证实时性）
+        } else {
         await new Promise(r => setTimeout(r, 0));
+        }
+        
         if (abortSignal.abort) return;
 
         const effectiveWholeWord = cfg.wholeWord && !isCJK(val);
@@ -2304,88 +2278,163 @@
         // 获取includeForcedHidden配置（从CONFIG中获取，不受pinned限制）
         const includeForcedHidden = CONFIG.search.includeForcedHidden || false;
 
+        // 性能保护：添加超时机制（10秒）
+        const searchStartTime = performance.now();
+        const SEARCH_TIMEOUT = 10000; // 10秒超时
+        let nodeCount = 0;
+        const MAX_NODES = 50000; // 最大节点数限制，防止无限循环
+
+        // 缓存 getComputedStyle 结果，避免重复计算
+        const styleCache = new WeakMap();
+        const getCachedStyle = (el) => {
+            if (!styleCache.has(el)) {
+                styleCache.set(el, window.getComputedStyle(el));
+            }
+            return styleCache.get(el);
+        };
+
         const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, {
             acceptNode: n => {
-                const p = n.parentNode;
-
-                // 注意：INPUT和TEXTAREA现在单独处理，不再在这里拒绝
-                if(['SCRIPT','STYLE','NOSCRIPT','SELECT'].includes(p.tagName))
-                    return NodeFilter.FILTER_REJECT;
-
-                if(shadow && shadow.host && shadow.host.contains(p))
-                    return NodeFilter.FILTER_REJECT;
-
-                // 根据includeHidden和includeForcedHidden决定是否接受节点
-                if (!cfg.includeHidden) {
-                    // 默认搜索：只搜索可见内容
-                    if (!isVisible(p, false)) {
+                try {
+                    // 性能保护：检查超时
+                    if (performance.now() - searchStartTime > SEARCH_TIMEOUT) {
+                        console.warn('[Super Find Bar] Search timeout, aborting');
+                        abortSignal.abort = true;
                         return NodeFilter.FILTER_REJECT;
                     }
-                } else {
-                    // 包含隐藏元素：搜索自然隐藏的内容
-                    // 如果元素是可见的，直接接受
-                    if (isVisible(p, false)) {
-                        return NodeFilter.FILTER_ACCEPT;
+
+                    // 性能保护：限制节点数量
+                    nodeCount++;
+                    if (nodeCount > MAX_NODES) {
+                        console.warn('[Super Find Bar] Too many nodes, aborting');
+                        abortSignal.abort = true;
+                        return NodeFilter.FILTER_REJECT;
                     }
-                    
-                    // 检查是否是菜单类元素（需要特殊处理）
-                    const tagName = p.tagName ? p.tagName.toLowerCase() : '';
-                    const role = p.getAttribute('role') || '';
-                    const className = p.className || '';
-                    const isMenuElement = tagName === 'menu' || tagName === 'nav' || tagName === 'header' || 
-                                         tagName === 'select' || tagName === 'option' ||
-                                         role === 'menu' || role === 'navigation' || role === 'menubar' || role === 'menuitem' ||
-                                         className.toLowerCase().includes('menu') || className.toLowerCase().includes('dropdown');
-                    
-                    // 如果是菜单类元素，即使父元素隐藏也允许搜索（因为菜单可以通过交互显示）
-                    if (isMenuElement) {
-                        // 检查元素本身是否被刻意隐藏
-                        const style = window.getComputedStyle(p);
-                        if (style.display === 'none' || style.visibility === 'hidden') {
-                            // 菜单元素即使display:none也视为自然隐藏
+
+                const p = n.parentNode;
+                    if (!p) return NodeFilter.FILTER_REJECT;
+
+                    // 注意：INPUT和TEXTAREA现在单独处理，不再在这里拒绝
+                    if (['SCRIPT', 'STYLE', 'NOSCRIPT', 'SELECT'].includes(p.tagName))
+                    return NodeFilter.FILTER_REJECT;
+
+                    if (shadow && shadow.host && shadow.host.contains(p))
+                    return NodeFilter.FILTER_REJECT;
+
+                    // 根据includeHidden和includeForcedHidden决定是否接受节点
+                    if (!cfg.includeHidden) {
+                        // 默认搜索：只搜索可见内容
+                        if (!isVisible(p, false)) {
+                    return NodeFilter.FILTER_REJECT;
+                        }
+                        // 可见元素，接受
+                        return NodeFilter.FILTER_ACCEPT;
+                    } else {
+                        // 包含隐藏元素：搜索可见元素 + 自然隐藏元素 + （可选）强制隐藏元素
+
+                        // 1. 如果元素是可见的，直接接受（这是最重要的，确保可见元素不会被拒绝）
+                        if (isVisible(p, false)) {
+                return NodeFilter.FILTER_ACCEPT;
+                        }
+                        
+                        // 2. 如果元素是自然隐藏的（菜单、手风琴等），接受
+                        if (isNaturallyHidden(p)) {
                             return NodeFilter.FILTER_ACCEPT;
                         }
-                    }
-                    
-                    // 如果元素是自然隐藏的，接受
-                    if (isNaturallyHidden(p)) {
-                        return NodeFilter.FILTER_ACCEPT;
-                    }
-                    // 如果元素是刻意隐藏的，且includeForcedHidden为true，接受
-                    if (includeForcedHidden && !isVisible(p, false)) {
-                        // 再次检查，使用includeForcedHidden参数
-                        if (isVisible(p, true)) {
-                            return NodeFilter.FILTER_ACCEPT;
+                        
+                        // 2.5. 额外检查：如果元素在菜单容器内，且不可见，也应该接受（确保菜单项能被搜索到）
+                        // 这是一个兜底检查，防止 isNaturallyHidden 漏掉某些菜单项
+                        let checkParent = p.parentElement;
+                        let parentDepth = 0;
+                        while (checkParent && checkParent !== document.body && parentDepth < 10) {
+                            const parentTagName = checkParent.tagName ? checkParent.tagName.toLowerCase() : '';
+                            const parentRole = checkParent.getAttribute('role') || '';
+                            const parentClassName = checkParent.className || '';
+                            const parentId = checkParent.id || '';
+                            
+                            // 检查父元素是否是菜单容器
+                            if (parentTagName === 'menu' || parentTagName === 'nav' || parentTagName === 'header' ||
+                                parentRole === 'menu' || parentRole === 'navigation' || parentRole === 'menubar' ||
+                                parentClassName.toLowerCase().includes('menu') || parentClassName.toLowerCase().includes('dropdown') ||
+                                parentId.toLowerCase().includes('menu') || parentId.toLowerCase().includes('dropdown') ||
+                                parentClassName.toLowerCase().includes('nav') || parentClassName.toLowerCase().includes('navbar')) {
+                                // 元素在菜单容器内，且不可见，视为自然隐藏
+                                return NodeFilter.FILTER_ACCEPT;
+                            }
+                            checkParent = checkParent.parentElement;
+                            parentDepth++;
                         }
+                        
+                        // 3. 如果启用了强制隐藏搜索，且元素是强制隐藏的，接受
+                        if (includeForcedHidden) {
+                            // 使用缓存的样式，避免重复计算
+                            const style = getCachedStyle(p);
+                            // 强制隐藏：display:none, visibility:hidden
+                            if (style.display === 'none' || style.visibility === 'hidden') {
+                                return NodeFilter.FILTER_ACCEPT;
+                            }
+                            // opacity: 0 且不是自然隐藏的元素，视为强制隐藏
+                            const opacity = parseFloat(style.opacity);
+                            if (!isNaN(opacity) && opacity === 0 && !isNaturallyHidden(p)) {
+                                return NodeFilter.FILTER_ACCEPT;
+                            }
+                            // clip-path 隐藏
+                            const clipPath = style.clipPath || style.webkitClipPath;
+                            if (clipPath && (clipPath.includes('inset(100%)') || clipPath.includes('inset(100% 100%)'))) {
+                                return NodeFilter.FILTER_ACCEPT;
+                            }
+                        }
+                        
+                        // 其他情况拒绝（既不可见，也不是自然隐藏，也不是强制隐藏）
+                        return NodeFilter.FILTER_REJECT;
                     }
-                    // 其他情况拒绝
+                } catch (e) {
+                    // 错误处理：捕获异常，避免中断搜索
+                    console.warn('[Super Find Bar] Error in acceptNode:', e);
                     return NodeFilter.FILTER_REJECT;
                 }
-
-                return NodeFilter.FILTER_ACCEPT;
             }
         });
         const nodes = [];
-        while(walker.nextNode()) nodes.push(walker.currentNode);
-        
+        try {
+            while (walker.nextNode()) {
+                if (abortSignal.abort) break;
+                // 再次检查超时
+                if (performance.now() - searchStartTime > SEARCH_TIMEOUT) {
+                    console.warn('[Super Find Bar] Search timeout during node collection');
+                    abortSignal.abort = true;
+                    break;
+                }
+                nodes.push(walker.currentNode);
+            }
+        } catch (e) {
+            console.warn('[Super Find Bar] Error during node collection:', e);
+            if (abortSignal.abort) {
+                loadingInd.style.display = 'none';
+                countDisplay.style.opacity = '1';
+                state.abortController = null;
+                return;
+            }
+        }
+
         // 初始化allRanges数组（必须在输入框处理之前声明）
         const allRanges = [];
         const MAX_HIGHLIGHTS = 1000;
         const BATCH_SIZE = 200;
-        
+
         // 单独处理INPUT和TEXTAREA元素：搜索它们的value属性
         const inputElements = document.querySelectorAll('input[type="text"], input[type="search"], input:not([type]), textarea');
         for (const inputEl of inputElements) {
             if (abortSignal.abort || state.searchId !== currentId) break;
-            
+
             // 跳过shadow DOM中的元素
             if (shadow && shadow.host && shadow.host.contains(inputEl)) continue;
-            
+
             // 输入框的可见性检查：更宽松，主要检查display和visibility
             const inputStyle = window.getComputedStyle(inputEl);
             const isInputDisplayNone = inputStyle.display === 'none';
             const isInputVisibilityHidden = inputStyle.visibility === 'hidden';
-            
+
             // 如果输入框是display:none或visibility:hidden，根据配置决定是否搜索
             if (isInputDisplayNone || isInputVisibilityHidden) {
                 if (!cfg.includeHidden) {
@@ -2399,20 +2448,20 @@
                 }
             }
             // 其他情况（如opacity:0、height:0等）都允许搜索，因为输入框的value属性仍然有效
-            
+
             const inputValue = inputEl.value || '';
             if (!inputValue.trim()) continue;
-            
+
             // 处理忽略重音符号
             const textForSearch = cfg.ignoreAccents ? inputValue.normalize("NFD").replace(/[\u0300-\u036f]/g, "") : inputValue;
-            
+
             // 对每个搜索词进行匹配
             terms.forEach((termObj, termIdx) => {
                 if (abortSignal.abort || state.searchId !== currentId) return;
-                
+
                 const termColor = CONFIG.colors[termIdx % CONFIG.colors.length];
                 let matches = [];
-                
+
                 if (termObj.isRegex) {
                     try {
                         const re = new RegExp(termObj.text, cfg.matchCase ? 'g' : 'gi');
@@ -2420,7 +2469,7 @@
                         while ((m = re.exec(textForSearch)) !== null) {
                             matches.push({ s: m.index, e: re.lastIndex });
                         }
-                    } catch(e) {}
+                    } catch (e) { }
                 } else if (cfg.fuzzy) {
                     const k = cfg.fuzzyTolerance;
                     const termLen = termObj.text.length;
@@ -2429,7 +2478,7 @@
                     const text = cfg.matchCase ? textForSearch : textForSearch.toLowerCase();
                     const minL = Math.max(1, termLen - k);
                     const maxL = Math.min(textLen, termLen + k);
-                    
+
                     for (let pos = 0; pos < textLen; pos++) {
                         if (pos + minL > textLen) break;
                         let bestDist = k + 1;
@@ -2461,25 +2510,55 @@
                         matches.push({ s: m.index, e: re.lastIndex });
                     }
                 }
-                
+
                 // 为每个匹配创建高亮
                 matches.forEach(match => {
                     if (allRanges.length >= MAX_HIGHLIGHTS) return;
-                    
+
                     try {
                         // 对于INPUT和TEXTAREA，我们需要创建一个特殊的Range对象
                         // 由于value不在DOM中，我们创建一个临时的文本节点来模拟
                         // 但更好的方式是直接高亮整个输入框
-                        
+
                         // 创建Range对象，指向输入框元素本身
                         // 注意：这不会高亮文本内容，但可以标记匹配的位置
                         const range = document.createRange();
-                        range.selectNodeContents(inputEl);
-                        
+
+                        // FIX: input/textarea cannot use selectNodeContents safely if they are void elements
+                        // Use selectNode to target the element itself
+                        range.selectNode(inputEl);
+
                         // 验证Range是否有效
                         const testRect = range.getBoundingClientRect();
-                        if (testRect.width === 0 && testRect.height === 0) return;
+                        const isZeroSize = testRect.width === 0 && testRect.height === 0;
                         
+                        // 判断是否可高亮（输入框默认可高亮，除非是强制隐藏的）
+                        let canHighlight = true;
+                        
+                        if (isZeroSize) {
+                            // 零尺寸输入框：根据配置决定是否创建 Range
+                            if (cfg.includeHidden && includeForcedHidden) {
+                                // 强制隐藏的输入框：可以计数和雷达定位，但不能高亮
+                                canHighlight = false;
+                            } else {
+                                // 未启用强制隐藏，拒绝零尺寸输入框
+                                return;
+                            }
+                        } else if (cfg.includeHidden) {
+                            // 启用"包含隐藏"时，检查输入框是否被强制隐藏
+                            const inputStyle = window.getComputedStyle(inputEl);
+                            if (inputStyle.display === 'none' || inputStyle.visibility === 'hidden') {
+                                if (includeForcedHidden) {
+                                    // 强制隐藏的输入框：不能高亮
+                                    canHighlight = false;
+                                } else {
+                                    // 未启用强制隐藏，跳过
+                                    return;
+                                }
+                            }
+                            // 可见或自然隐藏的输入框：可以高亮
+                        }
+
                         // 存储匹配信息，用于后续高亮
                         allRanges.push({
                             range: range,
@@ -2488,9 +2567,10 @@
                             isInput: true, // 标记为输入框
                             matchStart: match.s, // 匹配的起始位置
                             matchEnd: match.e, // 匹配的结束位置
-                            inputValue: inputValue // 存储原始值
+                            inputValue: inputValue, // 存储原始值
+                            canHighlight: canHighlight // 是否可以高亮
                         });
-                    } catch(e) {
+                    } catch (e) {
                         // Range创建失败，跳过
                     }
                 });
@@ -2541,7 +2621,7 @@
                         const re = new RegExp(termObj.text, cfg.matchCase ? 'g' : 'gi');
                         let m;
                         while ((m = re.exec(textForSearch)) !== null) ranges.push({ s: m.index, e: re.lastIndex, c: termColor });
-                    } catch(e) {}
+                    } catch (e) { }
                 } else if (cfg.fuzzy) {
                     const k = cfg.fuzzyTolerance;
                     const termLen = termObj.text.length;
@@ -2586,51 +2666,110 @@
                 try {
                     // 验证文本节点是否仍然有效
                     if (!node || !node.parentNode) return;
-                    
+
                     // 验证索引范围是否有效
                     const nodeText = node.textContent || '';
                     if (r.s < 0 || r.e > nodeText.length || r.s >= r.e) return;
-                    
+
                     // 验证匹配的文本是否为空或仅包含空白字符
                     const matchedText = nodeText.substring(r.s, r.e).trim();
                     if (!matchedText || matchedText.length === 0) return;
-                    
-                    // 创建 Range 前再次检查父元素可见性（如果未启用包含隐藏内容）
-                    if (!cfg.includeHidden) {
-                        const parentEl = node.parentElement;
-                        if (parentEl && !isVisible(parentEl, false)) return;
-                    } else {
-                        // 包含隐藏元素时，检查是否为自然隐藏或强制隐藏
-                        const parentEl = node.parentElement;
-                        if (parentEl) {
-                            // 如果可见，直接通过
-                            if (isVisible(parentEl, false)) {
-                                // 继续处理
-                            } else if (isNaturallyHidden(parentEl)) {
-                                // 自然隐藏，通过
-                            } else if (includeForcedHidden && isVisible(parentEl, true)) {
-                                // 强制隐藏且允许搜索，通过
-                            } else {
-                                // 其他情况，拒绝
-                                return;
-                            }
-                        }
-                    }
-                    
+
+                    // 注意：不再重复检查可见性，因为已经在 acceptNode 中检查过了
+                    // 这样可以避免双重检查导致的不一致，提高搜索完整性
+
                     const range = document.createRange();
                     range.setStart(node, r.s);
                     range.setEnd(node, r.e);
-                    
+
                     // 验证 Range 是否有效（检查是否能获取矩形）
                     const testRect = range.getBoundingClientRect();
-                    if (testRect.width === 0 && testRect.height === 0) return;
+                    const isZeroSize = testRect.width === 0 && testRect.height === 0;
+
+                    // 判断是否可高亮
+                    let canHighlight = true;
                     
+                    // 检查元素是否在菜单容器内（自然隐藏）
+                    const parentEl = node.parentElement;
+                    let isInMenuContainer = false;
+                    if (parentEl) {
+                        let checkParent = parentEl;
+                        let parentDepth = 0;
+                        while (checkParent && checkParent !== document.body && parentDepth < 10) {
+                            const parentTagName = checkParent.tagName ? checkParent.tagName.toLowerCase() : '';
+                            const parentRole = checkParent.getAttribute('role') || '';
+                            const parentClassName = checkParent.className || '';
+                            const parentId = checkParent.id || '';
+                            
+                            if (parentTagName === 'menu' || parentTagName === 'nav' || parentTagName === 'header' ||
+                                parentRole === 'menu' || parentRole === 'navigation' || parentRole === 'menubar' ||
+                                parentClassName.toLowerCase().includes('menu') || parentClassName.toLowerCase().includes('dropdown') ||
+                                parentId.toLowerCase().includes('menu') || parentId.toLowerCase().includes('dropdown') ||
+                                parentClassName.toLowerCase().includes('nav') || parentClassName.toLowerCase().includes('navbar')) {
+                                isInMenuContainer = true;
+                                break;
+                            }
+                            checkParent = checkParent.parentElement;
+                            parentDepth++;
+                        }
+                    }
+                    
+                    if (isZeroSize) {
+                        // 零尺寸元素：根据配置决定是否创建 Range
+                        if (cfg.includeHidden) {
+                            // 如果元素在菜单容器内（自然隐藏），即使零尺寸也可以高亮（展开后会显示）
+                            if (isInMenuContainer || isNaturallyHidden(parentEl)) {
+                                canHighlight = true;
+                            } else if (includeForcedHidden) {
+                                // 强制隐藏：可以计数和雷达定位，但不能高亮
+                                canHighlight = false;
+                            } else {
+                                // 未启用强制隐藏，拒绝零尺寸 Range
+                                return;
+                            }
+                        } else {
+                            // 未启用包含隐藏，拒绝零尺寸 Range
+                            return;
+                        }
+                    } else {
+                        // 非零尺寸：根据配置判断是否可高亮
+                        // 注意：可见性检查已在 acceptNode 中完成，这里只判断 canHighlight
+                        if (cfg.includeHidden) {
+                            if (parentEl && !isVisible(parentEl, false)) {
+                                // 不可见元素：检查是否为强制隐藏
+                                if (includeForcedHidden) {
+                                    const style = window.getComputedStyle(parentEl);
+                                    if (style.display === 'none' || style.visibility === 'hidden') {
+                                        // 强制隐藏：不能高亮
+                                        canHighlight = false;
+                                    } else if (isNaturallyHidden(parentEl) || isInMenuContainer) {
+                                        // 自然隐藏（包括菜单容器内的元素）：可以高亮
+                                        canHighlight = true;
+                                    } else {
+                                        // 其他情况：可以高亮（已在 acceptNode 中接受）
+                                        canHighlight = true;
+                                    }
+                                } else {
+                                    // 未启用强制隐藏，但已在 acceptNode 中接受（应该是自然隐藏）
+                                    canHighlight = true;
+                                }
+                            } else {
+                                // 可见元素：可以高亮
+                                canHighlight = true;
+                            }
+                        } else {
+                            // 未启用包含隐藏：所有 Range 都可以高亮（已在 acceptNode 中过滤）
+                            canHighlight = true;
+                        }
+                    }
+
                     allRanges.push({
                         range: range,
                         color: r.c,
-                        node: node
+                        node: node,
+                        canHighlight: canHighlight
                     });
-                } catch(e) {
+                } catch (e) {
                     // Range 创建失败，跳过
                 }
             });
@@ -2648,6 +2787,73 @@
         state.ranges = allRanges;
         state.abortController = null;
 
+        // 自动刷新时：尝试匹配之前的高亮，保持序号
+        if (isAutoRefresh && preservedRange && preservedIdx >= 0) {
+            // 尝试在结果中找到匹配的 Range
+            let matchedIdx = -1;
+            
+            // 方法1：精确匹配 Range 的容器和偏移量
+            try {
+                if (preservedRange.startContainer && preservedRange.startOffset !== undefined) {
+                    matchedIdx = allRanges.findIndex(r => {
+                        if (!r.range) return false;
+                        try {
+                            return r.range.startContainer === preservedRange.startContainer &&
+                                   r.range.startOffset === preservedRange.startOffset &&
+                                   r.range.endContainer === preservedRange.endContainer &&
+                                   r.range.endOffset === preservedRange.endOffset;
+                        } catch (e) {
+                            return false;
+                        }
+                    });
+                }
+            } catch (e) {
+                // Range 可能已失效，继续尝试其他方法
+            }
+            
+            // 方法2：如果精确匹配失败，尝试匹配文本内容和位置
+            if (matchedIdx < 0 && preservedRange.startContainer) {
+                try {
+                    const preservedText = preservedRange.toString();
+                    const preservedNode = preservedRange.startContainer;
+                    
+                    matchedIdx = allRanges.findIndex(r => {
+                        if (!r.range) return false;
+                        try {
+                            // 比较文本内容和节点
+                            const currentText = r.range.toString();
+                            if (currentText === preservedText && r.range.startContainer === preservedNode) {
+                                // 进一步比较偏移量（允许小范围误差）
+                                const offsetDiff = Math.abs(r.range.startOffset - preservedRange.startOffset);
+                                return offsetDiff <= 5; // 允许5个字符的误差
+                            }
+                            return false;
+                        } catch (e) {
+                            return false;
+                        }
+                    });
+                } catch (e) {
+                    // 匹配失败，继续
+                }
+            }
+            
+            // 如果找到匹配，保持当前序号；否则重置为第一个
+            if (matchedIdx >= 0 && matchedIdx < allRanges.length) {
+                state.idx = matchedIdx; // 保持当前序号
+            } else {
+                // 匹配失败，重置为第一个结果（如果有）
+                state.idx = allRanges.length > 0 ? 0 : -1;
+            }
+        } else if (!isAutoRefresh) {
+            // 手动搜索时：重置为第一个结果
+            state.idx = allRanges.length > 0 ? 0 : -1;
+        } else {
+            // 自动刷新但没有保存的高亮：保持当前索引（如果有效）
+            if (state.idx < 0 || state.idx >= allRanges.length) {
+                state.idx = allRanges.length > 0 ? 0 : -1;
+            }
+        }
+
         loadingInd.style.display = 'none';
         countDisplay.style.opacity = '1';
 
@@ -2664,37 +2870,74 @@
         }
 
         updateUI();
-        
+
         // 更新搜索结果数量和时间
+        const previousCount = state.lastResultCount;
         state.lastResultCount = allRanges.length;
         state.lastSearchTime = Date.now();
         
+        // 检查搜索结果是否稳定（用于判断搜索是否完整）
+        checkSearchStability(previousCount, allRanges.length);
+        
+        // 检查搜索结果是否稳定（用于判断搜索是否完整）
+        checkSearchStability(previousCount, allRanges.length);
+
         // 如果是用户主动搜索（非自动刷新），启动智能刷新监听器
         if (!isAutoRefresh) {
         if (allRanges.length > 0) {
                 // 启动DOM变化监听，检测页面内容加载
                 startMutationObserver();
+                // 保留当前索引（如果有），否则设置为第一个
+                if (state.idx < 0 || state.idx >= allRanges.length) {
             go(1);
         } else {
+                    // 保留当前索引，只更新高亮
+                    highlightAll();
+                    updateUI();
+                }
+            } else {
                 // 没有搜索结果，停止监听
                 stopMutationObserver();
             drawTickBar();
-            }
+                // 没有搜索结果时，重置加载状态为默认
+                updateLoadStatus('complete', 'complete');
+        }
         } else {
-            // 自动刷新：根据结果数量变化决定是否继续监听
+            // 自动刷新：保留当前索引，不重置，不滚动
+            state.isAutoRefreshing = true; // 设置自动刷新标志
             if (allRanges.length > 0) {
-                go(1);
+                // 如果当前索引仍然有效，保留；否则设置为 -1（不激活任何字段，避免滚动）
+                if (state.idx >= 0 && state.idx < allRanges.length) {
+                    // 保留当前索引，只更新高亮（不滚动）
+                    highlightAll(true); // 传递 isAutoRefresh 参数
+                    updateUI();
+                } else {
+                    // 索引无效时，设置为 -1，只更新高亮，不滚动
+                    state.idx = -1;
+                    highlightAll(true); // 传递 isAutoRefresh 参数
+                    updateUI();
+                }
             } else {
+                // 没有结果，清除索引
+                state.idx = -1;
                 drawTickBar();
             }
+            // 延迟清除自动刷新标志，确保所有异步操作（如 requestAnimationFrame）都能检测到
+            // 使用 setTimeout 确保在下一个事件循环中清除，给所有 RAF 足够的时间
+            setTimeout(() => {
+                state.isAutoRefreshing = false;
+            }, 100); // 100ms 足够让所有 RAF 完成
         }
     }
 
-    function highlightAll() {
+    function highlightAll(isAutoRefresh = false) {
         if (!state.supportsHighlight || !CSS.highlights) {
             drawTickBar();
             return;
         }
+
+        // 保存自动刷新状态，避免在异步操作中状态被改变
+        const shouldSkipScroll = isAutoRefresh || state.isAutoRefreshing;
 
         const show = CONFIG.search.highlightAll;
 
@@ -2710,14 +2953,19 @@
         if (show) {
             const colorGroups = {};
             const inputHighlights = []; // 存储输入框高亮信息
-            
+
             state.ranges.forEach(rangeData => {
+                // 跳过不能高亮的 Range（强制隐藏的元素不参与高亮，但已计入总数）
+                if (rangeData.canHighlight === false) {
+                    return;
+                }
+                
                 // 如果是输入框，特殊处理
                 if (rangeData.isInput) {
                     inputHighlights.push(rangeData);
                     return;
                 }
-                
+
                 const color = rangeData.color;
                 if (!colorGroups[color]) {
                     colorGroups[color] = [];
@@ -2732,66 +2980,194 @@
                     CSS.highlights.set(`sf-term-${colorIdx}`, highlight);
                 }
             });
-            
+
             // 处理输入框高亮：创建覆盖层
             if (inputHighlights.length > 0) {
                 // 清除旧的输入框高亮
                 document.querySelectorAll('.sf-input-highlight').forEach(el => el.remove());
-                
+
                 inputHighlights.forEach(rangeData => {
                     try {
                         const inputEl = rangeData.node;
                         if (!inputEl || !inputEl.parentNode) return;
-                        
+
                         const rect = inputEl.getBoundingClientRect();
                         if (rect.width === 0 && rect.height === 0) return;
-                        
-                        // 创建高亮覆盖层（高亮整个输入框，因为精确计算文本位置很复杂）
+
+                        // 计算匹配文字在输入框中的位置
+                        const matchStart = rangeData.matchStart;
+                        const matchEnd = rangeData.matchEnd;
+                        const inputValue = rangeData.inputValue;
+                        const matchedText = inputValue.substring(matchStart, matchEnd);
+                        const textBeforeMatch = inputValue.substring(0, matchStart);
+
+                        // 创建临时测量元素，获取输入框的样式
+                        const tempSpan = document.createElement('span');
+                        tempSpan.style.cssText = `
+                            position: absolute;
+                            visibility: hidden;
+                            white-space: pre;
+                            font-family: ${window.getComputedStyle(inputEl).fontFamily};
+                            font-size: ${window.getComputedStyle(inputEl).fontSize};
+                            font-weight: ${window.getComputedStyle(inputEl).fontWeight};
+                            font-style: ${window.getComputedStyle(inputEl).fontStyle};
+                            letter-spacing: ${window.getComputedStyle(inputEl).letterSpacing};
+                            text-transform: ${window.getComputedStyle(inputEl).textTransform};
+                        `;
+                        document.body.appendChild(tempSpan);
+
+                        // 测量匹配前文字的宽度
+                        tempSpan.textContent = textBeforeMatch;
+                        const textBeforeWidth = tempSpan.offsetWidth;
+
+                        // 测量匹配文字的宽度
+                        tempSpan.textContent = matchedText;
+                        const matchTextWidth = tempSpan.offsetWidth;
+
+                        // 清理临时元素
+                        document.body.removeChild(tempSpan);
+
+                        // 获取输入框的样式信息
+                        const inputStyle = window.getComputedStyle(inputEl);
+                        const paddingLeft = parseFloat(inputStyle.paddingLeft) || 0;
+                        const paddingTop = parseFloat(inputStyle.paddingTop) || 0;
+                        const borderLeft = parseFloat(inputStyle.borderLeftWidth) || 0;
+                        const borderTop = parseFloat(inputStyle.borderTopWidth) || 0;
+                        const lineHeight = parseFloat(inputStyle.lineHeight) || parseFloat(inputStyle.fontSize);
+
+                        // 计算高亮位置（考虑 padding 和 border）
+                        const highlightLeft = rect.left + paddingLeft + borderLeft + textBeforeWidth;
+                        const highlightTop = rect.top + paddingTop + borderTop;
+                        const highlightWidth = matchTextWidth;
+                        const highlightHeight = lineHeight;
+
+                        // 检查是否为当前激活的 Range
+                        const isActive = rangeData === state.ranges[state.idx];
+
+                        // 创建高亮覆盖层（只高亮匹配的文字部分）
                         const highlightOverlay = document.createElement('div');
                         highlightOverlay.className = 'sf-input-highlight';
-                        highlightOverlay.style.cssText = `
-                            position: fixed;
-                            pointer-events: none;
-                            z-index: 2147483645;
-                            background: ${rangeData.color}30;
-                            border: 2px solid ${rangeData.color};
-                            border-radius: 4px;
-                            box-shadow: 0 0 8px ${rangeData.color}60;
-                        `;
                         
-                        // 高亮整个输入框（简单但有效）
-                        highlightOverlay.style.left = rect.left + 'px';
-                        highlightOverlay.style.top = rect.top + 'px';
-                        highlightOverlay.style.width = rect.width + 'px';
-                        highlightOverlay.style.height = rect.height + 'px';
+                        // 根据激活状态设置不同的样式
+                        if (isActive) {
+                            // 激活状态：橙色边框、更明显的背景色
+                            highlightOverlay.style.cssText = `
+                                position: fixed;
+                                pointer-events: none;
+                                z-index: 2147483645;
+                                background: #ff572240;
+                                border: 2px solid #ff5722;
+                                border-radius: 2px;
+                                box-shadow: 0 0 4px #ff572280, 0 0 8px #ff572240;
+                            `;
+                        } else {
+                            // 普通状态：使用原始颜色
+                            highlightOverlay.style.cssText = `
+                                position: fixed;
+                                pointer-events: none;
+                                z-index: 2147483645;
+                                background: ${rangeData.color}40;
+                                border-radius: 2px;
+                                box-shadow: 0 0 2px ${rangeData.color}80;
+                            `;
+                        }
                         
+                        // 存储 rangeData 引用，用于后续更新激活状态
+                        highlightOverlay._rangeData = rangeData;
+
+                        highlightOverlay.style.left = highlightLeft + 'px';
+                        highlightOverlay.style.top = highlightTop + 'px';
+                        highlightOverlay.style.width = highlightWidth + 'px';
+                        highlightOverlay.style.height = highlightHeight + 'px';
+
                         document.body.appendChild(highlightOverlay);
-                        
-                        // 监听输入框位置变化，更新高亮位置
+
+                        // 监听输入框位置和内容变化，更新高亮位置
                         const updatePosition = () => {
-                            const newRect = inputEl.getBoundingClientRect();
-                            if (newRect.width > 0 && newRect.height > 0) {
-                                highlightOverlay.style.left = newRect.left + 'px';
-                                highlightOverlay.style.top = newRect.top + 'px';
-                                highlightOverlay.style.width = newRect.width + 'px';
-                                highlightOverlay.style.height = newRect.height + 'px';
+                            try {
+                                const newRect = inputEl.getBoundingClientRect();
+                                if (newRect.width === 0 && newRect.height === 0) {
+                                    highlightOverlay.style.display = 'none';
+                                    return;
+                                }
+                                highlightOverlay.style.display = '';
+
+                                // 重新计算位置（输入框内容可能已变化）
+                                const currentValue = inputEl.value || '';
+                                if (currentValue !== inputValue) {
+                                    // 内容已变化，尝试重新匹配
+                                    const newMatchStart = currentValue.indexOf(matchedText, matchStart);
+                                    if (newMatchStart !== -1) {
+                                        const newTextBeforeMatch = currentValue.substring(0, newMatchStart);
+                                        
+                                        // 重新测量（获取输入框样式）
+                                        const inputStyle = window.getComputedStyle(inputEl);
+                                        const newTempSpan = document.createElement('span');
+                                        newTempSpan.style.cssText = `
+                                            position: absolute;
+                                            visibility: hidden;
+                                            white-space: pre;
+                                            font-family: ${inputStyle.fontFamily};
+                                            font-size: ${inputStyle.fontSize};
+                                            font-weight: ${inputStyle.fontWeight};
+                                            font-style: ${inputStyle.fontStyle};
+                                            letter-spacing: ${inputStyle.letterSpacing};
+                                            text-transform: ${inputStyle.textTransform};
+                                        `;
+                                        document.body.appendChild(newTempSpan);
+                                        
+                                        newTempSpan.textContent = newTextBeforeMatch;
+                                        const newTextBeforeWidth = newTempSpan.offsetWidth;
+                                        
+                                        newTempSpan.textContent = matchedText;
+                                        const newMatchTextWidth = newTempSpan.offsetWidth;
+                                        
+                                        document.body.removeChild(newTempSpan);
+
+                                        const newHighlightLeft = newRect.left + paddingLeft + borderLeft + newTextBeforeWidth;
+                                        const newHighlightTop = newRect.top + paddingTop + borderTop;
+
+                                        highlightOverlay.style.left = newHighlightLeft + 'px';
+                                        highlightOverlay.style.top = newHighlightTop + 'px';
+                                        highlightOverlay.style.width = newMatchTextWidth + 'px';
+                                    } else {
+                                        // 匹配文字已不存在，隐藏高亮
+                                        highlightOverlay.style.display = 'none';
+                                    }
+                                } else {
+                                    // 内容未变化，只更新位置
+                                    const newHighlightLeft = newRect.left + paddingLeft + borderLeft + textBeforeWidth;
+                                    const newHighlightTop = newRect.top + paddingTop + borderTop;
+
+                                    highlightOverlay.style.left = newHighlightLeft + 'px';
+                                    highlightOverlay.style.top = newHighlightTop + 'px';
+                                }
+                            } catch (e) {
+                                // 更新失败，忽略
                             }
                         };
-                        
-                        // 使用ResizeObserver和MutationObserver监听位置变化
+
+                        // 使用ResizeObserver监听输入框大小变化
                         const resizeObserver = new ResizeObserver(updatePosition);
                         resizeObserver.observe(inputEl);
-                        
+
                         // 监听滚动事件更新位置
                         const scrollHandler = () => updatePosition();
                         window.addEventListener('scroll', scrollHandler, true);
-                        
+
+                        // 监听输入框内容变化（MutationObserver 监听 value 属性变化）
+                        const inputHandler = () => updatePosition();
+                        inputEl.addEventListener('input', inputHandler);
+                        inputEl.addEventListener('change', inputHandler);
+
                         // 存储清理函数
                         highlightOverlay._cleanup = () => {
                             resizeObserver.disconnect();
                             window.removeEventListener('scroll', scrollHandler, true);
+                            inputEl.removeEventListener('input', inputHandler);
+                            inputEl.removeEventListener('change', inputHandler);
                         };
-                    } catch(e) {
+                    } catch (e) {
                         console.error('[Super Find Bar] Failed to highlight input:', e);
                     }
                 });
@@ -2801,20 +3177,54 @@
             document.querySelectorAll('.sf-input-highlight').forEach(el => el.remove());
         }
 
+        // 更新所有输入框高亮的激活状态
+        document.querySelectorAll('.sf-input-highlight').forEach(overlay => {
+            if (overlay._rangeData) {
+                const isActive = overlay._rangeData === state.ranges[state.idx];
+                if (isActive) {
+                    // 激活状态：橙色边框、更明显的背景色
+                    overlay.style.background = '#ff572240';
+                    overlay.style.border = '2px solid #ff5722';
+                    overlay.style.boxShadow = '0 0 4px #ff572280, 0 0 8px #ff572240';
+                } else {
+                    // 普通状态：使用原始颜色
+                    const color = overlay._rangeData.color;
+                    overlay.style.background = `${color}40`;
+                    overlay.style.border = 'none';
+                    overlay.style.boxShadow = `0 0 2px ${color}80`;
+                }
+            }
+        });
+
         // 设置当前激活的高亮并滚动
         if (state.idx > -1 && state.ranges[state.idx]) {
-            const activeRange = state.ranges[state.idx].range;
+            const activeRangeData = state.ranges[state.idx];
+            const activeRange = activeRangeData.range;
+            
+            // 对于输入框类型的 Range，跳过 CSS.highlights 设置（使用覆盖层样式）
+            if (activeRangeData.isInput) {
+                CSS.highlights.delete('sf-search-active');
+            } else if (activeRangeData.canHighlight !== false) {
+                // 只有可高亮的 Range 才设置激活高亮（强制隐藏的元素不能高亮，但能计数和雷达定位）
             const activeHighlight = new Highlight(activeRange);
             CSS.highlights.set('sf-search-active', activeHighlight);
+            } else {
+                // 强制隐藏的元素清除激活高亮，但仍然可以滚动定位（通过雷达）
+                CSS.highlights.delete('sf-search-active');
+            }
 
             // 使用双重 RAF 确保高亮已渲染完成
             // RAF #1: 进入浏览器的渲染队列
             requestAnimationFrame(() => {
                 // RAF #2: 确保布局和绘制已完成
                 requestAnimationFrame(() => {
-                    // 检查是否正在使用雷达定位，如果是则跳过滚动，避免冲突
-                    if (!state.isRadarLocating) {
-                    // 此时高亮已经渲染，立即滚动到位置
+                    // 检查是否正在使用雷达定位或自动刷新，如果是则跳过滚动，避免冲突
+                    // 自动刷新时不应该滚动，保持用户当前的浏览位置
+                    // 使用保存的状态，而不是全局状态（因为可能在异步操作中已被改变）
+                    if (!state.isRadarLocating && !shouldSkipScroll) {
+                        // 对于自然隐藏的元素（菜单、手风琴等），即使当前不可见，也尝试滚动到其位置
+                        // 当用户展开菜单时，高亮会显示出来
+                        // 对于强制隐藏的元素，滚动可能无效，但仍然尝试（主要用于雷达定位）
                     scrollToRangeImmediate(activeRange);
                     }
                     
@@ -2832,6 +3242,11 @@
     
     // 立即滚动到指定 Range（不使用 smooth 动画）
     function scrollToRangeImmediate(range) {
+        // 双重保险：如果正在自动刷新，禁止滚动
+        if (state.isAutoRefreshing) {
+            return;
+        }
+        
         try {
             const rect = range.getBoundingClientRect();
             
@@ -2873,7 +3288,7 @@
                     behavior: 'auto'  // 使用 instant 滚动，避免动画延迟
                 });
             }
-        } catch(e) {
+        } catch (e) {
             // Range 无效，忽略错误
         }
     }
@@ -2897,15 +3312,15 @@
         if (tickBarX) tickBarX.innerHTML = '';
         if (tickBarY) tickBarY.innerHTML = '';
         
-        if(!state.ranges.length) {
-            if (tickBarX) tickBarX.style.display='none';
-            if (tickBarY) tickBarY.style.display='none';
+        if (!state.ranges.length) {
+            if (tickBarX) tickBarX.style.display = 'none';
+            if (tickBarY) tickBarY.style.display = 'none';
             return;
         }
         
         // 显示已启用的坐标轴
-        if (CONFIG.coordinates.showXAxis && tickBarX) tickBarX.style.display='block';
-        if (CONFIG.coordinates.showYAxis && tickBarY) tickBarY.style.display='block';
+        if (CONFIG.coordinates.showXAxis && tickBarX) tickBarX.style.display = 'block';
+        if (CONFIG.coordinates.showYAxis && tickBarY) tickBarY.style.display = 'block';
         
         // 性能优化：限制标记数量，避免渲染过多 DOM 导致卡顿
         const MAX_MARKERS = 150;
@@ -3019,7 +3434,7 @@
                     }
                     fragmentX.appendChild(markX);
                 }
-            } catch(e) {
+            } catch (e) {
                 // Range 无效，跳过
             }
         });
@@ -3059,9 +3474,23 @@
 
     // 防抖检查隐藏状态的定时器
     let hiddenCheckTimer = null;
+    // 防抖切换定时器，避免快速切换时闪烁
+    let goDebounceTimer = null;
 
     function go(dir) {
         if (!state.ranges.length) return;
+        
+        // 清除所有相关的定时器，避免冲突
+        if (goDebounceTimer) {
+            clearTimeout(goDebounceTimer);
+            goDebounceTimer = null;
+        }
+        if (hiddenCheckTimer) {
+            clearTimeout(hiddenCheckTimer);
+            hiddenCheckTimer = null;
+        }
+        
+        // 立即更新索引
         state.idx = (state.idx + dir + state.ranges.length) % state.ranges.length;
 
         // 验证当前 Range 是否仍然有效
@@ -3073,47 +3502,57 @@
             return;
         }
 
-        // 先清除之前的隐藏检查定时器
-        if (hiddenCheckTimer) {
-            clearTimeout(hiddenCheckTimer);
-            hiddenCheckTimer = null;
-        }
-        
-        // 先更新UI和高亮，不立即检查隐藏状态
+        // 立即更新UI（不延迟）
         toast.textContent = '';
         toast.classList.remove('visible');
         input.classList.remove('warn-hidden');
-        highlightAll();
         updateUI();
         
-        // 延迟检查隐藏状态，确保DOM已完全更新（使用双重RAF确保高亮渲染完成）
-        requestAnimationFrame(() => {
-            requestAnimationFrame(() => {
-                // 再次延迟50ms，确保所有渲染完成
-                hiddenCheckTimer = setTimeout(() => {
+        // 立即更新高亮（不使用防抖，避免闪烁）
+        // 使用 RAF 确保在下一帧更新，但不要延迟太久
+        if (goDebounceTimer !== null) {
+            // goDebounceTimer 可能是 RAF ID 或 setTimeout ID，需要分别处理
+            if (typeof goDebounceTimer === 'number' && goDebounceTimer > 1000000) {
+                // 看起来是 RAF ID（通常很大）
+                cancelAnimationFrame(goDebounceTimer);
+            } else {
+                // 看起来是 setTimeout ID
+                clearTimeout(goDebounceTimer);
+            }
+        }
+        goDebounceTimer = requestAnimationFrame(() => {
+            highlightAll();
+            goDebounceTimer = null;
+        });
+
+        // 延迟检查隐藏状态（不影响切换流畅性）
+        hiddenCheckTimer = setTimeout(() => {
         let isHidden = false;
         try {
             const rangeNode = currentRange.range.startContainer;
             const element = rangeNode.nodeType === Node.TEXT_NODE ? rangeNode.parentElement : rangeNode;
             isHidden = element ? !isVisible(element) : false;
-        } catch(e) {
-                        // 如果出错，不显示隐藏提示
-                        isHidden = false;
-                    }
-                    
-                    // 只有在确实隐藏时才显示提示
-                    if (isHidden) {
-                        toast.textContent = t('hiddenAlert');
-                        toast.classList.add('visible');
-                        input.classList.add('warn-hidden');
-                    }
-                    hiddenCheckTimer = null;
-                }, 50);
-            });
-        });
-        
-        // 智能刷新：切换后检测是否需要刷新搜索结果
-        checkAndRefreshAfterSwitch();
+            } catch (e) {
+                isHidden = false;
+            }
+
+            if (isHidden) {
+                toast.textContent = t('hiddenAlert');
+                toast.classList.add('visible');
+                input.classList.add('warn-hidden');
+            }
+            hiddenCheckTimer = null;
+        }, 100); // 延迟100ms检查隐藏状态，不影响切换
+
+        // 注意：切换时不要立即启动刷新监听器，避免触发刷新导致闪烁
+        // 只在用户停止切换一段时间后才启动监听器
+        if (state.switchRefreshTimer) {
+            clearTimeout(state.switchRefreshTimer);
+        }
+        state.switchRefreshTimer = setTimeout(() => {
+            checkAndRefreshAfterSwitch();
+            state.switchRefreshTimer = null;
+        }, 1000); // 切换后1秒才启动刷新监听器，避免冲突
     }
 
     function updateUI() {
@@ -3139,6 +3578,16 @@
             checkPageSize();
             setTimeout(() => input.focus(), 50);
             updatePlaceholder();
+            
+            // 更新加载状态（搜索框打开时）
+            if (input.value && input.value.trim()) {
+                // 有搜索词时，检查当前状态
+                checkPageLoadComplete();
+            } else {
+                // 没有搜索词时，显示初始状态
+                updateLoadStatus(state.pageLoadStatus, 'incomplete');
+            }
+            
             if (input.value && state.ranges.length === 0 && !CONFIG.search.fuzzy && !state.manualMode) triggerSearch();
         } else {
             if (state.abortController) {
@@ -3158,7 +3607,7 @@
             } else {
                 document.querySelectorAll('sf-mark').forEach(m => {
                     const p = m.parentNode;
-                    if(p) { p.replaceChild(document.createTextNode(m.textContent), m); p.normalize(); }
+                    if (p) { p.replaceChild(document.createTextNode(m.textContent), m); p.normalize(); }
                 });
             }
 
@@ -3235,6 +3684,8 @@
             window.addEventListener('load', () => toggle(true));
         }
         tryInit();
+        // 初始化页面加载状态监测
+        initLoadStatusMonitoring();
     });
 
 })();
