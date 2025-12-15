@@ -33,6 +33,11 @@ chrome.runtime.onInstalled.addListener((details) => {
         //     message: `版本 ${currentVersion} 的新功能：支持 Gemini/PDF 搜索！`
         // });
     }
+    
+    // 扩展安装/更新时清除临时设置（确保干净的开始）
+    if (details.reason === 'install' || details.reason === 'update') {
+        clearTemporarySettings();
+    }
 });
 
 // 监听来自 options 页面或 content script 的消息
@@ -80,13 +85,6 @@ function clearTemporarySettings() {
 // 浏览器启动时清除临时设置（chrome.storage.local 中的临时配置）
 chrome.runtime.onStartup.addListener(() => {
     clearTemporarySettings();
-});
-
-// 扩展安装/更新时也清除临时设置（确保干净的开始）
-chrome.runtime.onInstalled.addListener((details) => {
-    if (details.reason === 'install' || details.reason === 'update') {
-        clearTemporarySettings();
-    }
 });
 
 
