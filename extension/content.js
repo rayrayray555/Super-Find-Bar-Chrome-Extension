@@ -4032,6 +4032,13 @@
     function go(dir) {
         if (!state.ranges.length) return;
         
+        // 【优化】如果正在雷达定位（涟漪动画播放中），清除标志以允许页面滚动
+        // 这样用户快速切换字段时，页面可以立即滚动到新位置
+        // 涟漪动画会继续在上一个字段的屏幕位置完成播放（因为使用 fixed 定位）
+        if (state.isRadarLocating) {
+            state.isRadarLocating = false;
+        }
+        
         // 清除所有相关的定时器，避免冲突
         if (goDebounceTimer) {
             clearTimeout(goDebounceTimer);
