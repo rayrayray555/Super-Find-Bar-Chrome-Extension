@@ -179,7 +179,12 @@
         pageLoadStatus: 'loading', // 'loading' | 'complete'
         searchCompleteStatus: 'incomplete', // 'incomplete' | 'complete'
         lastContentChangeTime: 0,
-        stableSearchCheckTimer: null
+        stableSearchCheckTimer: null,
+        // 增量更新相关状态
+        currentHighlightIds: new Set(), // 当前高亮的唯一标识集合
+        currentMarkerIds: new Set(), // 当前标记的唯一标识集合
+        highlightRegistry: new Map(), // 高亮注册表：id -> { highlight, ranges }
+        markerRegistry: new Map() // 标记注册表：id -> { element, rangeData }
     };
 
     function tryInit() {
@@ -1707,16 +1712,16 @@
     function mkChk(key, label) {
         const l = document.createElement('label'); l.className = 'sf-chk';
         // 只有 pinned 数组中的选项才能被勾选，且读取当前勾选状态
-        const c = document.createElement('input');
+        const c = document.createElement('input'); 
         c.type = 'checkbox';
         c.checked = CONFIG.search.pinned.includes(key) ? CONFIG.search[key] : false;
         c.disabled = !CONFIG.search.pinned.includes(key); // 不在工具栏中的选项禁用
         c.onchange = () => {
             // 只有 pinned 中的选项才能修改勾选状态
             if (CONFIG.search.pinned.includes(key)) {
-            CONFIG.search[key] = c.checked;
-            saveConfig();
-            updatePlaceholder();
+                CONFIG.search[key] = c.checked;
+                saveConfig();
+                updatePlaceholder();
                 // 实时更新搜索结果：如果有搜索词，立即触发搜索
                 if (input.value && input.value.trim() && !CONFIG.search.fuzzy && !state.manualMode) {
                     triggerSearch();
@@ -1971,6 +1976,55 @@
         }
     }
 
+    // 生成 Range 的唯一标识（用于增量更新）
+    function generateRangeId(rangeData) {
+        try {
+            if (rangeData.isInput) {
+                // 输入框类型：使用节点、匹配位置、颜色生成ID
+                const node = rangeData.node;
+                const nodeId = node.id || '';
+                const nodeClass = node.className || '';
+                const nodeTag = node.tagName || '';
+                const matchStart = rangeData.matchStart || 0;
+                const matchEnd = rangeData.matchEnd || 0;
+                const color = rangeData.color || '';
+                return `input:${nodeTag}:${nodeId}:${nodeClass}:${matchStart}:${matchEnd}:${color}`;
+            } else {
+                // 普通文本类型：使用容器节点、偏移量、颜色生成ID
+                const range = rangeData.range;
+                if (!range) return null;
+                const startContainer = range.startContainer;
+                const endContainer = range.endContainer;
+                const startOffset = range.startOffset;
+                const endOffset = range.endOffset;
+                
+                // 获取容器的唯一标识
+                let startId = '';
+                let endId = '';
+                
+                if (startContainer.nodeType === Node.TEXT_NODE) {
+                    const parent = startContainer.parentNode;
+                    startId = parent ? (parent.id || parent.className || parent.tagName || '') : '';
+                } else {
+                    startId = startContainer.id || startContainer.className || startContainer.tagName || '';
+                }
+                
+                if (endContainer.nodeType === Node.TEXT_NODE) {
+                    const parent = endContainer.parentNode;
+                    endId = parent ? (parent.id || parent.className || parent.tagName || '') : '';
+                } else {
+                    endId = endContainer.id || endContainer.className || endContainer.tagName || '';
+                }
+                
+                const color = rangeData.color || '';
+                return `text:${startId}:${endId}:${startOffset}:${endOffset}:${color}`;
+            }
+        } catch (e) {
+            // 生成ID失败，返回null
+            return null;
+        }
+    }
+
     // 刷新搜索
     async function refreshSearch(source) {
         // 限制重试次数：最多3次
@@ -2160,6 +2214,9 @@
             state.abortController.abort = true;
         }
 
+        // 手动搜索时：清除所有高亮和标记
+        // 自动刷新时：不清除，使用增量更新
+        if (!isAutoRefresh) {
         if (state.supportsHighlight && CSS.highlights) {
             CSS.highlights.clear();
         } else {
@@ -2167,19 +2224,26 @@
             if (oldMarks.length > 0) {
                 oldMarks.forEach(m => {
                     const p = m.parentNode;
-                    if (p) {
+                        if (p) {
                         p.replaceChild(document.createTextNode(m.textContent), m);
                         p.normalize();
                     }
                 });
             }
-        }
+            }
 
-        // 清除输入框高亮覆盖层
-        document.querySelectorAll('.sf-input-highlight').forEach(el => {
-            if (el._cleanup) el._cleanup();
-            el.remove();
-        });
+            // 清除输入框高亮覆盖层
+            document.querySelectorAll('.sf-input-highlight').forEach(el => {
+                if (el._cleanup) el._cleanup();
+                el.remove();
+            });
+            
+            // 清空增量更新状态
+            state.currentHighlightIds.clear();
+            state.currentMarkerIds.clear();
+            state.highlightRegistry.clear();
+            state.markerRegistry.clear();
+        }
 
         state.isDirty = false;
         state.searchId++;
@@ -2191,7 +2255,7 @@
         const val = input.value;
         // 创建搜索配置，但只使用 pinned 数组中的选项
         const cfg = JSON.parse(JSON.stringify(CONFIG.search));
-
+        
         // 关键逻辑：只有 pinned 数组中的选项才参与搜索筛选
         // 如果选项不在 pinned 中，强制设为 false（不参与搜索）
         const searchOptions = ['matchCase', 'wholeWord', 'highlightAll', 'ignoreAccents', 'regex', 'includeHidden', 'fuzzy'];
@@ -2217,8 +2281,12 @@
 
         state.ranges = [];
         state.idx = -1;
+        // 手动搜索时：清空坐标轴
+        // 自动刷新时：不清空，使用增量更新
+        if (!isAutoRefresh) {
         if (tickBarX) tickBarX.innerHTML = '';
         if (tickBarY) tickBarY.innerHTML = '';
+        }
         toast.classList.remove('visible');
         input.classList.remove('warn-hidden');
 
@@ -2890,10 +2958,16 @@
                 // 保留当前索引（如果有），否则设置为第一个
                 if (state.idx < 0 || state.idx >= allRanges.length) {
             go(1);
+            // 注意：不需要在这里再次检查隐藏状态，因为 go(1) 中已经有延迟100ms的检查
+            // go(1) 会先移除 warn-hidden，然后延迟检查并正确设置状态
         } else {
                     // 保留当前索引，只更新高亮
                     highlightAll();
                     updateUI();
+                    // 检查当前结果的隐藏状态（保留当前索引时，go() 不会被调用，需要单独检查）
+                    setTimeout(() => {
+                        checkCurrentResultHiddenState();
+                    }, 150);
                 }
             } else {
                 // 没有搜索结果，停止监听
@@ -2911,22 +2985,219 @@
                     // 保留当前索引，只更新高亮（不滚动）
                     highlightAll(true); // 传递 isAutoRefresh 参数
                     updateUI();
+                    // 自动刷新时也需要检查隐藏状态，确保虚线提示正确显示
+                    setTimeout(() => {
+                        checkCurrentResultHiddenState();
+                    }, 150); // 稍微延迟，确保高亮更新完成
                 } else {
                     // 索引无效时，设置为 -1，只更新高亮，不滚动
                     state.idx = -1;
                     highlightAll(true); // 传递 isAutoRefresh 参数
                     updateUI();
+                    // 清除隐藏状态提示（因为没有激活的结果）
+                    input.classList.remove('warn-hidden');
+                    toast.classList.remove('visible');
                 }
             } else {
                 // 没有结果，清除索引
                 state.idx = -1;
                 drawTickBar();
+                // 清除隐藏状态提示（因为没有结果）
+                input.classList.remove('warn-hidden');
+                toast.classList.remove('visible');
             }
             // 延迟清除自动刷新标志，确保所有异步操作（如 requestAnimationFrame）都能检测到
             // 使用 setTimeout 确保在下一个事件循环中清除，给所有 RAF 足够的时间
             setTimeout(() => {
                 state.isAutoRefreshing = false;
             }, 100); // 100ms 足够让所有 RAF 完成
+        }
+    }
+
+    // 创建输入框高亮覆盖层（独立函数，便于复用）
+    function createInputHighlight(rangeData) {
+        try {
+            const inputEl = rangeData.node;
+            if (!inputEl || !inputEl.parentNode) return;
+
+            const rect = inputEl.getBoundingClientRect();
+            if (rect.width === 0 && rect.height === 0) return;
+
+            // 计算匹配文字在输入框中的位置
+            const matchStart = rangeData.matchStart;
+            const matchEnd = rangeData.matchEnd;
+            const inputValue = rangeData.inputValue;
+            const matchedText = inputValue.substring(matchStart, matchEnd);
+            const textBeforeMatch = inputValue.substring(0, matchStart);
+
+            // 创建临时测量元素，获取输入框的样式
+            const tempSpan = document.createElement('span');
+            tempSpan.style.cssText = `
+                position: absolute;
+                visibility: hidden;
+                white-space: pre;
+                font-family: ${window.getComputedStyle(inputEl).fontFamily};
+                font-size: ${window.getComputedStyle(inputEl).fontSize};
+                font-weight: ${window.getComputedStyle(inputEl).fontWeight};
+                font-style: ${window.getComputedStyle(inputEl).fontStyle};
+                letter-spacing: ${window.getComputedStyle(inputEl).letterSpacing};
+                text-transform: ${window.getComputedStyle(inputEl).textTransform};
+            `;
+            document.body.appendChild(tempSpan);
+
+            // 测量匹配前文字的宽度
+            tempSpan.textContent = textBeforeMatch;
+            const textBeforeWidth = tempSpan.offsetWidth;
+
+            // 测量匹配文字的宽度
+            tempSpan.textContent = matchedText;
+            const matchTextWidth = tempSpan.offsetWidth;
+
+            // 清理临时元素
+            document.body.removeChild(tempSpan);
+
+            // 获取输入框的样式信息
+            const inputStyle = window.getComputedStyle(inputEl);
+            const paddingLeft = parseFloat(inputStyle.paddingLeft) || 0;
+            const paddingTop = parseFloat(inputStyle.paddingTop) || 0;
+            const borderLeft = parseFloat(inputStyle.borderLeftWidth) || 0;
+            const borderTop = parseFloat(inputStyle.borderTopWidth) || 0;
+            const lineHeight = parseFloat(inputStyle.lineHeight) || parseFloat(inputStyle.fontSize);
+
+            // 计算高亮位置（考虑 padding 和 border）
+            const highlightLeft = rect.left + paddingLeft + borderLeft + textBeforeWidth;
+            const highlightTop = rect.top + paddingTop + borderTop;
+            const highlightWidth = matchTextWidth;
+            const highlightHeight = lineHeight;
+
+            // 检查是否为当前激活的 Range
+            const isActive = rangeData === state.ranges[state.idx];
+
+            // 创建高亮覆盖层（只高亮匹配的文字部分）
+            const highlightOverlay = document.createElement('div');
+            highlightOverlay.className = 'sf-input-highlight';
+            
+            // 根据激活状态设置不同的样式
+            if (isActive) {
+                // 激活状态：橙色边框、更明显的背景色
+                highlightOverlay.style.cssText = `
+                    position: fixed;
+                    pointer-events: none;
+                    z-index: 2147483645;
+                    background: #ff572240;
+                    border: 2px solid #ff5722;
+                    border-radius: 2px;
+                    box-shadow: 0 0 4px #ff572280, 0 0 8px #ff572240;
+                `;
+            } else {
+                // 普通状态：使用原始颜色
+                highlightOverlay.style.cssText = `
+                    position: fixed;
+                    pointer-events: none;
+                    z-index: 2147483645;
+                    background: ${rangeData.color}40;
+                    border-radius: 2px;
+                    box-shadow: 0 0 2px ${rangeData.color}80;
+                `;
+            }
+            
+            // 存储 rangeData 引用，用于后续更新激活状态
+            highlightOverlay._rangeData = rangeData;
+
+            highlightOverlay.style.left = highlightLeft + 'px';
+            highlightOverlay.style.top = highlightTop + 'px';
+            highlightOverlay.style.width = highlightWidth + 'px';
+            highlightOverlay.style.height = highlightHeight + 'px';
+
+            document.body.appendChild(highlightOverlay);
+
+            // 监听输入框位置和内容变化，更新高亮位置
+            const updatePosition = () => {
+                try {
+                    const newRect = inputEl.getBoundingClientRect();
+                    if (newRect.width === 0 && newRect.height === 0) {
+                        highlightOverlay.style.display = 'none';
+                        return;
+                    }
+                    highlightOverlay.style.display = '';
+
+                    // 重新计算位置（输入框内容可能已变化）
+                    const currentValue = inputEl.value || '';
+                    if (currentValue !== inputValue) {
+                        // 内容已变化，尝试重新匹配
+                        const newMatchStart = currentValue.indexOf(matchedText, matchStart);
+                        if (newMatchStart !== -1) {
+                            const newTextBeforeMatch = currentValue.substring(0, newMatchStart);
+                            
+                            // 重新测量（获取输入框样式）
+                            const inputStyle = window.getComputedStyle(inputEl);
+                            const newTempSpan = document.createElement('span');
+                            newTempSpan.style.cssText = `
+                                position: absolute;
+                                visibility: hidden;
+                                white-space: pre;
+                                font-family: ${inputStyle.fontFamily};
+                                font-size: ${inputStyle.fontSize};
+                                font-weight: ${inputStyle.fontWeight};
+                                font-style: ${inputStyle.fontStyle};
+                                letter-spacing: ${inputStyle.letterSpacing};
+                                text-transform: ${inputStyle.textTransform};
+                            `;
+                            document.body.appendChild(newTempSpan);
+                            
+                            newTempSpan.textContent = newTextBeforeMatch;
+                            const newTextBeforeWidth = newTempSpan.offsetWidth;
+                            
+                            newTempSpan.textContent = matchedText;
+                            const newMatchTextWidth = newTempSpan.offsetWidth;
+                            
+                            document.body.removeChild(newTempSpan);
+
+                            const newHighlightLeft = newRect.left + paddingLeft + borderLeft + newTextBeforeWidth;
+                            const newHighlightTop = newRect.top + paddingTop + borderTop;
+
+                            highlightOverlay.style.left = newHighlightLeft + 'px';
+                            highlightOverlay.style.top = newHighlightTop + 'px';
+                            highlightOverlay.style.width = newMatchTextWidth + 'px';
+                        } else {
+                            // 匹配文字已不存在，隐藏高亮
+                            highlightOverlay.style.display = 'none';
+                        }
+                    } else {
+                        // 内容未变化，只更新位置
+                        const newHighlightLeft = newRect.left + paddingLeft + borderLeft + textBeforeWidth;
+                        const newHighlightTop = newRect.top + paddingTop + borderTop;
+
+                        highlightOverlay.style.left = newHighlightLeft + 'px';
+                        highlightOverlay.style.top = newHighlightTop + 'px';
+                    }
+                } catch (e) {
+                    // 更新失败，忽略
+                }
+            };
+
+            // 使用ResizeObserver监听输入框大小变化
+            const resizeObserver = new ResizeObserver(updatePosition);
+            resizeObserver.observe(inputEl);
+
+            // 监听滚动事件更新位置
+            const scrollHandler = () => updatePosition();
+            window.addEventListener('scroll', scrollHandler, true);
+
+            // 监听输入框内容变化（MutationObserver 监听 value 属性变化）
+            const inputHandler = () => updatePosition();
+            inputEl.addEventListener('input', inputHandler);
+            inputEl.addEventListener('change', inputHandler);
+
+            // 存储清理函数
+            highlightOverlay._cleanup = () => {
+                resizeObserver.disconnect();
+                window.removeEventListener('scroll', scrollHandler, true);
+                inputEl.removeEventListener('input', inputHandler);
+                inputEl.removeEventListener('change', inputHandler);
+            };
+        } catch (e) {
+            console.error('[Super Find Bar] Failed to highlight input:', e);
         }
     }
 
@@ -2941,16 +3212,27 @@
 
         const show = CONFIG.search.highlightAll;
 
-        // 立即清除旧高亮，避免闪烁
+        // 手动搜索时：清除所有高亮
+        // 自动刷新时：使用增量更新，不清除
+        if (!isAutoRefresh) {
         CSS.highlights.clear();
+        }
 
         if (state.ranges.length === 0) {
+            // 如果没有结果，清除所有高亮
+            if (isAutoRefresh) {
+                CSS.highlights.clear();
+                state.currentHighlightIds.clear();
+                state.highlightRegistry.clear();
+            }
             drawTickBar();
             return;
         }
 
         // 设置所有词的高亮
         if (show) {
+            // 增量更新：计算新的高亮标识集合
+            const newHighlightIds = new Set();
             const colorGroups = {};
             const inputHighlights = []; // 存储输入框高亮信息
 
@@ -2966,6 +3248,12 @@
                     return;
                 }
 
+                // 生成唯一标识
+                const rangeId = generateRangeId(rangeData);
+                if (rangeId) {
+                    newHighlightIds.add(rangeId);
+                }
+
                 const color = rangeData.color;
                 if (!colorGroups[color]) {
                     colorGroups[color] = [];
@@ -2973,204 +3261,177 @@
                 colorGroups[color].push(rangeData.range);
             });
 
+            // 增量更新：只更新变化的高亮
+            if (isAutoRefresh) {
+                // 找出需要删除的高亮（旧的有，新的没有）
+                const toDelete = [];
+                state.currentHighlightIds.forEach(oldId => {
+                    if (!newHighlightIds.has(oldId)) {
+                        toDelete.push(oldId);
+                    }
+                });
+
+                // 找出需要添加的高亮（新的有，旧的没有）
+                const toAdd = [];
+                newHighlightIds.forEach(newId => {
+                    if (!state.currentHighlightIds.has(newId)) {
+                        toAdd.push(newId);
+                    }
+                });
+
+                // 如果有变化，增量更新高亮（只更新变化的颜色组）
+                if (toDelete.length > 0 || toAdd.length > 0) {
+                    // 计算每个颜色组的变化
+                    const affectedColors = new Set();
+                    
+                    // 找出受影响的颜色
+                    toDelete.forEach(deletedId => {
+                        const registry = state.highlightRegistry.get(deletedId);
+                        if (registry) {
+                            affectedColors.add(registry.color);
+                        }
+                    });
+                    
+                    toAdd.forEach(addedId => {
+                        const rangeData = state.ranges.find(r => {
+                            if (r.canHighlight === false || r.isInput) return false;
+                            const rangeId = generateRangeId(r);
+                            return rangeId === addedId;
+                        });
+                        if (rangeData) {
+                            affectedColors.add(rangeData.color);
+                        }
+                    });
+                    
+                    // 对每个受影响的颜色组进行增量更新
+                    affectedColors.forEach(color => {
+                        const colorIdx = CONFIG.colors.indexOf(color);
+                        if (colorIdx === -1) return;
+                        
+                        // 重新构建该颜色组的所有Range（只包含新的结果）
+                        const updatedRanges = [];
+                        state.ranges.forEach(rangeData => {
+                            if (rangeData.canHighlight === false || rangeData.isInput) return;
+                            if (rangeData.color !== color) return;
+                            const rangeId = generateRangeId(rangeData);
+                            if (rangeId && newHighlightIds.has(rangeId)) {
+                                updatedRanges.push(rangeData.range);
+                            }
+                        });
+                        
+                        // 更新高亮（只更新有变化的颜色组）
+                        const highlightName = `sf-term-${colorIdx}`;
+                        if (updatedRanges.length > 0) {
+                            const highlight = new Highlight(...updatedRanges);
+                            CSS.highlights.set(highlightName, highlight);
+                        } else {
+                            CSS.highlights.delete(highlightName);
+                        }
+                    });
+                    
+                    // 更新注册表
+                    toDelete.forEach(deletedId => {
+                        state.highlightRegistry.delete(deletedId);
+                    });
+                    toAdd.forEach(addedId => {
+                        const rangeData = state.ranges.find(r => {
+                            if (r.canHighlight === false || r.isInput) return false;
+                            const rangeId = generateRangeId(r);
+                            return rangeId === addedId;
+                        });
+                        if (rangeData) {
+                            state.highlightRegistry.set(addedId, {
+                                range: rangeData.range,
+                                color: rangeData.color
+                            });
+                        }
+                    });
+                    
+                    // 更新状态
+                    state.currentHighlightIds = newHighlightIds;
+                }
+            } else {
+                // 手动搜索：直接设置所有高亮
             Object.keys(colorGroups).forEach(color => {
                 const colorIdx = CONFIG.colors.indexOf(color);
                 if (colorIdx !== -1) {
                     const highlight = new Highlight(...colorGroups[color]);
                     CSS.highlights.set(`sf-term-${colorIdx}`, highlight);
                 }
-            });
-
-            // 处理输入框高亮：创建覆盖层
-            if (inputHighlights.length > 0) {
-                // 清除旧的输入框高亮
-                document.querySelectorAll('.sf-input-highlight').forEach(el => el.remove());
-
-                inputHighlights.forEach(rangeData => {
-                    try {
-                        const inputEl = rangeData.node;
-                        if (!inputEl || !inputEl.parentNode) return;
-
-                        const rect = inputEl.getBoundingClientRect();
-                        if (rect.width === 0 && rect.height === 0) return;
-
-                        // 计算匹配文字在输入框中的位置
-                        const matchStart = rangeData.matchStart;
-                        const matchEnd = rangeData.matchEnd;
-                        const inputValue = rangeData.inputValue;
-                        const matchedText = inputValue.substring(matchStart, matchEnd);
-                        const textBeforeMatch = inputValue.substring(0, matchStart);
-
-                        // 创建临时测量元素，获取输入框的样式
-                        const tempSpan = document.createElement('span');
-                        tempSpan.style.cssText = `
-                            position: absolute;
-                            visibility: hidden;
-                            white-space: pre;
-                            font-family: ${window.getComputedStyle(inputEl).fontFamily};
-                            font-size: ${window.getComputedStyle(inputEl).fontSize};
-                            font-weight: ${window.getComputedStyle(inputEl).fontWeight};
-                            font-style: ${window.getComputedStyle(inputEl).fontStyle};
-                            letter-spacing: ${window.getComputedStyle(inputEl).letterSpacing};
-                            text-transform: ${window.getComputedStyle(inputEl).textTransform};
-                        `;
-                        document.body.appendChild(tempSpan);
-
-                        // 测量匹配前文字的宽度
-                        tempSpan.textContent = textBeforeMatch;
-                        const textBeforeWidth = tempSpan.offsetWidth;
-
-                        // 测量匹配文字的宽度
-                        tempSpan.textContent = matchedText;
-                        const matchTextWidth = tempSpan.offsetWidth;
-
-                        // 清理临时元素
-                        document.body.removeChild(tempSpan);
-
-                        // 获取输入框的样式信息
-                        const inputStyle = window.getComputedStyle(inputEl);
-                        const paddingLeft = parseFloat(inputStyle.paddingLeft) || 0;
-                        const paddingTop = parseFloat(inputStyle.paddingTop) || 0;
-                        const borderLeft = parseFloat(inputStyle.borderLeftWidth) || 0;
-                        const borderTop = parseFloat(inputStyle.borderTopWidth) || 0;
-                        const lineHeight = parseFloat(inputStyle.lineHeight) || parseFloat(inputStyle.fontSize);
-
-                        // 计算高亮位置（考虑 padding 和 border）
-                        const highlightLeft = rect.left + paddingLeft + borderLeft + textBeforeWidth;
-                        const highlightTop = rect.top + paddingTop + borderTop;
-                        const highlightWidth = matchTextWidth;
-                        const highlightHeight = lineHeight;
-
-                        // 检查是否为当前激活的 Range
-                        const isActive = rangeData === state.ranges[state.idx];
-
-                        // 创建高亮覆盖层（只高亮匹配的文字部分）
-                        const highlightOverlay = document.createElement('div');
-                        highlightOverlay.className = 'sf-input-highlight';
-                        
-                        // 根据激活状态设置不同的样式
-                        if (isActive) {
-                            // 激活状态：橙色边框、更明显的背景色
-                            highlightOverlay.style.cssText = `
-                                position: fixed;
-                                pointer-events: none;
-                                z-index: 2147483645;
-                                background: #ff572240;
-                                border: 2px solid #ff5722;
-                                border-radius: 2px;
-                                box-shadow: 0 0 4px #ff572280, 0 0 8px #ff572240;
-                            `;
-                        } else {
-                            // 普通状态：使用原始颜色
-                            highlightOverlay.style.cssText = `
-                                position: fixed;
-                                pointer-events: none;
-                                z-index: 2147483645;
-                                background: ${rangeData.color}40;
-                                border-radius: 2px;
-                                box-shadow: 0 0 2px ${rangeData.color}80;
-                            `;
-                        }
-                        
-                        // 存储 rangeData 引用，用于后续更新激活状态
-                        highlightOverlay._rangeData = rangeData;
-
-                        highlightOverlay.style.left = highlightLeft + 'px';
-                        highlightOverlay.style.top = highlightTop + 'px';
-                        highlightOverlay.style.width = highlightWidth + 'px';
-                        highlightOverlay.style.height = highlightHeight + 'px';
-
-                        document.body.appendChild(highlightOverlay);
-
-                        // 监听输入框位置和内容变化，更新高亮位置
-                        const updatePosition = () => {
-                            try {
-                                const newRect = inputEl.getBoundingClientRect();
-                                if (newRect.width === 0 && newRect.height === 0) {
-                                    highlightOverlay.style.display = 'none';
-                                    return;
-                                }
-                                highlightOverlay.style.display = '';
-
-                                // 重新计算位置（输入框内容可能已变化）
-                                const currentValue = inputEl.value || '';
-                                if (currentValue !== inputValue) {
-                                    // 内容已变化，尝试重新匹配
-                                    const newMatchStart = currentValue.indexOf(matchedText, matchStart);
-                                    if (newMatchStart !== -1) {
-                                        const newTextBeforeMatch = currentValue.substring(0, newMatchStart);
-                                        
-                                        // 重新测量（获取输入框样式）
-                                        const inputStyle = window.getComputedStyle(inputEl);
-                                        const newTempSpan = document.createElement('span');
-                                        newTempSpan.style.cssText = `
-                                            position: absolute;
-                                            visibility: hidden;
-                                            white-space: pre;
-                                            font-family: ${inputStyle.fontFamily};
-                                            font-size: ${inputStyle.fontSize};
-                                            font-weight: ${inputStyle.fontWeight};
-                                            font-style: ${inputStyle.fontStyle};
-                                            letter-spacing: ${inputStyle.letterSpacing};
-                                            text-transform: ${inputStyle.textTransform};
-                                        `;
-                                        document.body.appendChild(newTempSpan);
-                                        
-                                        newTempSpan.textContent = newTextBeforeMatch;
-                                        const newTextBeforeWidth = newTempSpan.offsetWidth;
-                                        
-                                        newTempSpan.textContent = matchedText;
-                                        const newMatchTextWidth = newTempSpan.offsetWidth;
-                                        
-                                        document.body.removeChild(newTempSpan);
-
-                                        const newHighlightLeft = newRect.left + paddingLeft + borderLeft + newTextBeforeWidth;
-                                        const newHighlightTop = newRect.top + paddingTop + borderTop;
-
-                                        highlightOverlay.style.left = newHighlightLeft + 'px';
-                                        highlightOverlay.style.top = newHighlightTop + 'px';
-                                        highlightOverlay.style.width = newMatchTextWidth + 'px';
-                                    } else {
-                                        // 匹配文字已不存在，隐藏高亮
-                                        highlightOverlay.style.display = 'none';
-                                    }
-                                } else {
-                                    // 内容未变化，只更新位置
-                                    const newHighlightLeft = newRect.left + paddingLeft + borderLeft + textBeforeWidth;
-                                    const newHighlightTop = newRect.top + paddingTop + borderTop;
-
-                                    highlightOverlay.style.left = newHighlightLeft + 'px';
-                                    highlightOverlay.style.top = newHighlightTop + 'px';
-                                }
-                            } catch (e) {
-                                // 更新失败，忽略
-                            }
-                        };
-
-                        // 使用ResizeObserver监听输入框大小变化
-                        const resizeObserver = new ResizeObserver(updatePosition);
-                        resizeObserver.observe(inputEl);
-
-                        // 监听滚动事件更新位置
-                        const scrollHandler = () => updatePosition();
-                        window.addEventListener('scroll', scrollHandler, true);
-
-                        // 监听输入框内容变化（MutationObserver 监听 value 属性变化）
-                        const inputHandler = () => updatePosition();
-                        inputEl.addEventListener('input', inputHandler);
-                        inputEl.addEventListener('change', inputHandler);
-
-                        // 存储清理函数
-                        highlightOverlay._cleanup = () => {
-                            resizeObserver.disconnect();
-                            window.removeEventListener('scroll', scrollHandler, true);
-                            inputEl.removeEventListener('input', inputHandler);
-                            inputEl.removeEventListener('change', inputHandler);
-                        };
-                    } catch (e) {
-                        console.error('[Super Find Bar] Failed to highlight input:', e);
+                });
+                
+                // 更新注册表（手动搜索时重建所有注册表）
+                state.highlightRegistry.clear();
+                state.ranges.forEach(rangeData => {
+                    if (rangeData.canHighlight === false || rangeData.isInput) return;
+                    const rangeId = generateRangeId(rangeData);
+                    if (rangeId) {
+                        state.highlightRegistry.set(rangeId, {
+                            range: rangeData.range,
+                            color: rangeData.color
+                        });
                     }
                 });
+                
+                state.currentHighlightIds = newHighlightIds;
+            }
+
+            // 处理输入框高亮：创建覆盖层（增量更新）
+            if (inputHighlights.length > 0) {
+                // 增量更新：计算新的输入框高亮标识集合
+                const newInputHighlightIds = new Set();
+                inputHighlights.forEach(rangeData => {
+                    const rangeId = generateRangeId(rangeData);
+                    if (rangeId) {
+                        newInputHighlightIds.add(rangeId);
+                    }
+                });
+
+                if (isAutoRefresh) {
+                    // 找出需要删除的输入框高亮（旧的有，新的没有）
+                    const existingOverlays = document.querySelectorAll('.sf-input-highlight');
+                    existingOverlays.forEach(overlay => {
+                        if (overlay._rangeData) {
+                            const overlayId = generateRangeId(overlay._rangeData);
+                            if (overlayId && !newInputHighlightIds.has(overlayId)) {
+                                // 需要删除
+                                if (overlay._cleanup) overlay._cleanup();
+                                overlay.remove();
+                            }
+                        }
+                    });
+
+                    // 找出需要添加的输入框高亮（新的有，旧的没有）
+                    const existingIds = new Set();
+                    existingOverlays.forEach(overlay => {
+                        if (overlay._rangeData) {
+                            const overlayId = generateRangeId(overlay._rangeData);
+                            if (overlayId) {
+                                existingIds.add(overlayId);
+                            }
+                        }
+                    });
+
+                    // 只创建新的输入框高亮
+                    inputHighlights.forEach(rangeData => {
+                        const rangeId = generateRangeId(rangeData);
+                        if (rangeId && !existingIds.has(rangeId)) {
+                            // 需要添加
+                            createInputHighlight(rangeData);
+                        }
+                    });
+                } else {
+                    // 手动搜索：清除旧的输入框高亮
+                    document.querySelectorAll('.sf-input-highlight').forEach(el => {
+                        if (el._cleanup) el._cleanup();
+                        el.remove();
+                    });
+
+                    // 创建所有输入框高亮
+                    inputHighlights.forEach(rangeData => {
+                        createInputHighlight(rangeData);
+                    });
+                }
             }
         } else {
             // 清除输入框高亮
@@ -3293,67 +3554,8 @@
         }
     }
 
-    // 性能优化：防抖 drawTickBar 调用
-    let drawTickBarTimer = null;
-    function drawTickBar() {
-        // 防抖：避免频繁调用
-        if (drawTickBarTimer) {
-            cancelAnimationFrame(drawTickBarTimer);
-        }
-        
-        drawTickBarTimer = requestAnimationFrame(() => {
-            drawTickBarImmediate();
-            drawTickBarTimer = null;
-        });
-    }
-    
-    function drawTickBarImmediate() {
-        // 清空坐标轴
-        if (tickBarX) tickBarX.innerHTML = '';
-        if (tickBarY) tickBarY.innerHTML = '';
-        
-        if (!state.ranges.length) {
-            if (tickBarX) tickBarX.style.display = 'none';
-            if (tickBarY) tickBarY.style.display = 'none';
-            return;
-        }
-        
-        // 显示已启用的坐标轴
-        if (CONFIG.coordinates.showXAxis && tickBarX) tickBarX.style.display = 'block';
-        if (CONFIG.coordinates.showYAxis && tickBarY) tickBarY.style.display = 'block';
-        
-        // 性能优化：限制标记数量，避免渲染过多 DOM 导致卡顿
-        const MAX_MARKERS = 150;
-        const rangesToRender = state.ranges.length > MAX_MARKERS ? 
-            sampleRanges(state.ranges, MAX_MARKERS) : 
-            state.ranges;
-        
-        // 计算页面尺寸（以左下角为原点）
-        const scrollTop = window.pageYOffset || document.documentElement.scrollTop;
-        const scrollHeight = document.documentElement.scrollHeight;
-        const scrollWidth = document.documentElement.scrollWidth;
-
-        // 使用 DocumentFragment 批量添加，避免逐个 appendChild 导致的重排
-        const fragmentX = document.createDocumentFragment();
-        const fragmentY = document.createDocumentFragment();
-
-        rangesToRender.forEach((rangeData, i) => {
-            try {
-                const rect = rangeData.range.getBoundingClientRect();
-                const absoluteTop = scrollTop + rect.top;
-                const absoluteLeft = window.pageXOffset + rect.left;
-                
-                // Y 轴百分比（从上到下，0-100%）
-                const yPercent = Math.max(0, Math.min(100, (absoluteTop / scrollHeight) * 100));
-                
-                // X 轴百分比（从左到右，0-100%）
-                const xPercent = Math.max(0, Math.min(100, (absoluteLeft / scrollWidth) * 100));
-                
-                // 判断是否为当前激活的结果
-                const isActive = rangeData === state.ranges[state.idx];
-                
-                // 绘制 Y 轴标记（纵向）
-                if (CONFIG.coordinates.showYAxis && tickBarY) {
+    // 创建Y轴标记
+    function createMarkerY(rangeData, yPercent, isActive) {
                     const markY = document.createElement('div');
                     const yPos = CONFIG.coordinates.yPosition === 'right' ? 'right' : 'left';
                     const offset = CONFIG.coordinates.yPosition === 'right' ? 
@@ -3387,20 +3589,20 @@
                             transform: translateY(-50%);
                         `;
                     }
-                    fragmentY.appendChild(markY);
+        return markY;
                 }
                 
-                // 绘制 X 轴标记（横向）
-                if (CONFIG.coordinates.showXAxis && tickBarX) {
+    // 创建X轴标记
+    function createMarkerX(rangeData, xPercent, isActive) {
                     const markX = document.createElement('div');
-                    // X轴位置自适应：当搜索栏在底部时，X轴无论选项是什么都自动去顶部，避免遮挡
+        // X轴位置自适应：当搜索栏在底部时，X轴无论选项是什么都自动去顶部，避免遮挡
                     let xPos = CONFIG.coordinates.xPosition === 'bottom' ? 'bottom' : 'top';
-                    if (CONFIG.layout.mode === 'bar' && CONFIG.layout.position === 'bottom') {
-                        // 搜索栏在底部时，X轴强制去顶部
-                        xPos = 'top';
-                    } else if (CONFIG.layout.mode === 'bar') {
-                        // 搜索栏在顶部时，X轴去底部
-                        xPos = 'bottom';
+        if (CONFIG.layout.mode === 'bar' && CONFIG.layout.position === 'bottom') {
+            // 搜索栏在底部时，X轴强制去顶部
+            xPos = 'top';
+        } else if (CONFIG.layout.mode === 'bar') {
+            // 搜索栏在顶部时，X轴去底部
+            xPos = 'bottom';
                     }
                     
                     const offset = isActive ? '3px' : '6px';
@@ -3432,7 +3634,322 @@
                             transform: translateX(-50%);
                         `;
                     }
+        return markX;
+    }
+
+    // 更新Y轴标记
+    function updateMarkerY(element, yPercent, isActive) {
+        const yPos = CONFIG.coordinates.yPosition === 'right' ? 'right' : 'left';
+        const offset = CONFIG.coordinates.yPosition === 'right' ? 
+            (isActive ? '3px' : '6px') : 
+            (isActive ? '3px' : '6px');
+        
+        element.style.top = `${yPercent}%`;
+        element.style[yPos] = offset;
+        
+        if (isActive) {
+            element.style.width = '14px';
+            element.style.height = '14px';
+            element.style.background = '#ff5722';
+            element.style.border = '2px solid #ffffff';
+            element.style.boxShadow = '0 0 6px rgba(255,87,34,0.8), 0 0 12px rgba(255,87,34,0.4)';
+        } else {
+            element.style.width = '8px';
+            element.style.height = '8px';
+            element.style.background = element._originalColor || '#4CAF50';
+            element.style.border = 'none';
+            element.style.boxShadow = 'none';
+        }
+    }
+
+    // 更新X轴标记
+    function updateMarkerX(element, xPercent, isActive) {
+        let xPos = CONFIG.coordinates.xPosition === 'bottom' ? 'bottom' : 'top';
+        if (CONFIG.layout.mode === 'bar' && CONFIG.layout.position === 'bottom') {
+            xPos = 'top';
+        } else if (CONFIG.layout.mode === 'bar') {
+            xPos = 'bottom';
+        }
+        
+        const offset = isActive ? '3px' : '6px';
+        
+        element.style.left = `${xPercent}%`;
+        element.style[xPos] = offset;
+        
+        if (isActive) {
+            element.style.width = '14px';
+            element.style.height = '14px';
+            element.style.background = '#ff5722';
+            element.style.border = '2px solid #ffffff';
+            element.style.boxShadow = '0 0 6px rgba(255,87,34,0.8), 0 0 12px rgba(255,87,34,0.4)';
+        } else {
+            element.style.width = '8px';
+            element.style.height = '8px';
+            element.style.background = element._originalColor || '#4CAF50';
+            element.style.border = 'none';
+            element.style.boxShadow = 'none';
+        }
+    }
+
+    // 性能优化：防抖 drawTickBar 调用
+    let drawTickBarTimer = null;
+    function drawTickBar() {
+        // 防抖：避免频繁调用
+        if (drawTickBarTimer) {
+            cancelAnimationFrame(drawTickBarTimer);
+        }
+        
+        drawTickBarTimer = requestAnimationFrame(() => {
+            drawTickBarImmediate();
+            drawTickBarTimer = null;
+        });
+    }
+    
+    function drawTickBarImmediate() {
+        // 判断是否是自动刷新
+        const isAutoRefresh = state.isAutoRefreshing;
+        
+        // 手动搜索时：清空坐标轴
+        // 自动刷新时：使用增量更新，不清空
+        if (!isAutoRefresh) {
+            if (tickBarX) tickBarX.innerHTML = '';
+            if (tickBarY) tickBarY.innerHTML = '';
+            state.currentMarkerIds.clear();
+            state.markerRegistry.clear();
+        }
+        
+        if (!state.ranges.length) {
+            if (tickBarX) tickBarX.style.display = 'none';
+            if (tickBarY) tickBarY.style.display = 'none';
+            if (isAutoRefresh) {
+                // 清除所有标记
+                state.currentMarkerIds.clear();
+                state.markerRegistry.forEach(({ element }) => {
+                    if (element && element.parentNode) {
+                        element.parentNode.removeChild(element);
+                    }
+                });
+                state.markerRegistry.clear();
+            }
+            return;
+        }
+        
+        // 显示已启用的坐标轴
+        if (CONFIG.coordinates.showXAxis && tickBarX) tickBarX.style.display = 'block';
+        if (CONFIG.coordinates.showYAxis && tickBarY) tickBarY.style.display = 'block';
+        
+        // 性能优化：限制标记数量，避免渲染过多 DOM 导致卡顿
+        const MAX_MARKERS = 150;
+        const rangesToRender = state.ranges.length > MAX_MARKERS ? 
+            sampleRanges(state.ranges, MAX_MARKERS) : 
+            state.ranges;
+        
+        // 计算页面尺寸（以左下角为原点）
+        const scrollTop = window.pageYOffset || document.documentElement.scrollTop;
+        const scrollHeight = document.documentElement.scrollHeight;
+        const scrollWidth = document.documentElement.scrollWidth;
+
+        // 增量更新：计算新的标记标识集合
+        const newMarkerIds = new Set();
+        rangesToRender.forEach((rangeData, i) => {
+            const rangeId = generateRangeId(rangeData);
+            if (rangeId) {
+                newMarkerIds.add(rangeId);
+            }
+        });
+
+        if (isAutoRefresh) {
+            // 增量更新：找出需要删除的标记（旧的有，新的没有）
+            const toDelete = [];
+            state.currentMarkerIds.forEach(oldId => {
+                if (!newMarkerIds.has(oldId)) {
+                    toDelete.push(oldId);
+                }
+            });
+
+            // 删除不存在的标记
+            toDelete.forEach(markerId => {
+                const registry = state.markerRegistry.get(markerId);
+                if (registry) {
+                    // 删除Y轴标记
+                    if (registry.element && registry.type === 'y') {
+                        if (registry.element.parentNode) {
+                            registry.element.parentNode.removeChild(registry.element);
+                        }
+                    }
+                    // 删除X轴标记
+                    if (registry.elementX) {
+                        if (registry.elementX.parentNode) {
+                            registry.elementX.parentNode.removeChild(registry.elementX);
+                        }
+                    } else if (registry.element && registry.type === 'x') {
+                        if (registry.element.parentNode) {
+                            registry.element.parentNode.removeChild(registry.element);
+                        }
+                    }
+                    state.markerRegistry.delete(markerId);
+                }
+            });
+
+            // 找出需要添加的标记（新的有，旧的没有）
+            const toAdd = [];
+            newMarkerIds.forEach(newId => {
+                if (!state.currentMarkerIds.has(newId)) {
+                    toAdd.push(newId);
+                }
+            });
+
+            // 找出需要更新的标记（位置可能发生变化）
+            const toUpdate = [];
+            state.currentMarkerIds.forEach(existingId => {
+                if (newMarkerIds.has(existingId)) {
+                    toUpdate.push(existingId);
+                }
+            });
+
+            // 使用 DocumentFragment 批量添加新标记
+            const fragmentX = document.createDocumentFragment();
+            const fragmentY = document.createDocumentFragment();
+
+            rangesToRender.forEach((rangeData, i) => {
+                const rangeId = generateRangeId(rangeData);
+                if (!rangeId) return;
+
+                const needsAdd = toAdd.includes(rangeId);
+                const needsUpdate = toUpdate.includes(rangeId);
+
+                if (needsAdd || needsUpdate) {
+                    try {
+                        const rect = rangeData.range.getBoundingClientRect();
+                        const absoluteTop = scrollTop + rect.top;
+                        const absoluteLeft = window.pageXOffset + rect.left;
+                        
+                        // Y 轴百分比（从上到下，0-100%）
+                        const yPercent = Math.max(0, Math.min(100, (absoluteTop / scrollHeight) * 100));
+                        
+                        // X 轴百分比（从左到右，0-100%）
+                        const xPercent = Math.max(0, Math.min(100, (absoluteLeft / scrollWidth) * 100));
+                        
+                        // 判断是否为当前激活的结果
+                        const isActive = rangeData === state.ranges[state.idx];
+                        
+                        if (needsAdd) {
+                            // 创建新标记
+                            if (CONFIG.coordinates.showYAxis && tickBarY) {
+                                const markY = createMarkerY(rangeData, yPercent, isActive);
+                                markY._originalColor = rangeData.color;
+                                fragmentY.appendChild(markY);
+                                // 注册标记
+                                const registry = state.markerRegistry.get(rangeId);
+                                if (registry) {
+                                    registry.element = markY;
+                                    registry.type = 'y';
+                                } else {
+                                    state.markerRegistry.set(rangeId, { element: markY, rangeData: rangeData, type: 'y' });
+                                }
+                            }
+                            
+                            if (CONFIG.coordinates.showXAxis && tickBarX) {
+                                const markX = createMarkerX(rangeData, xPercent, isActive);
+                                markX._originalColor = rangeData.color;
                     fragmentX.appendChild(markX);
+                                // 注册标记（如果已有Y轴标记，更新注册表）
+                                const registry = state.markerRegistry.get(rangeId);
+                                if (registry) {
+                                    registry.elementX = markX;
+                                } else {
+                                    state.markerRegistry.set(rangeId, { element: markX, rangeData: rangeData, type: 'x' });
+                                }
+                            }
+                        } else if (needsUpdate) {
+                            // 更新现有标记的位置和激活状态
+                            const registry = state.markerRegistry.get(rangeId);
+                            if (registry) {
+                                if (registry.element && registry.type === 'y') {
+                                    updateMarkerY(registry.element, yPercent, isActive);
+                                }
+                                if (registry.elementX) {
+                                    updateMarkerX(registry.elementX, xPercent, isActive);
+                                } else if (registry.element && registry.type === 'x') {
+                                    updateMarkerX(registry.element, xPercent, isActive);
+                                }
+                            }
+                        }
+                    } catch (e) {
+                        // Range 无效，跳过
+                    }
+                }
+            });
+
+            // 批量添加新标记
+            if (CONFIG.coordinates.showYAxis && tickBarY && fragmentY.childNodes.length > 0) {
+                tickBarY.appendChild(fragmentY);
+            }
+            if (CONFIG.coordinates.showXAxis && tickBarX && fragmentX.childNodes.length > 0) {
+                tickBarX.appendChild(fragmentX);
+            }
+
+            // 更新状态
+            state.currentMarkerIds = newMarkerIds;
+        } else {
+            // 手动搜索：直接创建所有标记
+            const fragmentX = document.createDocumentFragment();
+            const fragmentY = document.createDocumentFragment();
+
+            rangesToRender.forEach((rangeData, i) => {
+            try {
+                const rect = rangeData.range.getBoundingClientRect();
+                const absoluteTop = scrollTop + rect.top;
+                const absoluteLeft = window.pageXOffset + rect.left;
+                
+                // Y 轴百分比（从上到下，0-100%）
+                const yPercent = Math.max(0, Math.min(100, (absoluteTop / scrollHeight) * 100));
+                
+                // X 轴百分比（从左到右，0-100%）
+                const xPercent = Math.max(0, Math.min(100, (absoluteLeft / scrollWidth) * 100));
+                
+                // 判断是否为当前激活的结果
+                const isActive = rangeData === state.ranges[state.idx];
+                
+                // 生成唯一标识并注册
+                const rangeId = generateRangeId(rangeData);
+                
+                // 绘制 Y 轴标记（纵向）
+                if (CONFIG.coordinates.showYAxis && tickBarY) {
+                    const markY = createMarkerY(rangeData, yPercent, isActive);
+                    markY._originalColor = rangeData.color;
+                    fragmentY.appendChild(markY);
+                    // 注册标记
+                    if (rangeId) {
+                        const registry = state.markerRegistry.get(rangeId);
+                        if (registry) {
+                            registry.element = markY;
+                            registry.type = 'y';
+                        } else {
+                            state.markerRegistry.set(rangeId, { element: markY, rangeData: rangeData, type: 'y' });
+                        }
+                    }
+                }
+                
+                // 绘制 X 轴标记（横向）
+                if (CONFIG.coordinates.showXAxis && tickBarX) {
+                    const markX = createMarkerX(rangeData, xPercent, isActive);
+                    markX._originalColor = rangeData.color;
+                    fragmentX.appendChild(markX);
+                    // 注册标记（如果已有Y轴标记，更新注册表）
+                    if (rangeId) {
+                        const registry = state.markerRegistry.get(rangeId);
+                        if (registry) {
+                            registry.elementX = markX;
+                        } else {
+                            state.markerRegistry.set(rangeId, { element: markX, rangeData: rangeData, type: 'x' });
+                        }
+                    }
+                }
+                
+                // 添加到标识集合
+                if (rangeId) {
+                    newMarkerIds.add(rangeId);
                 }
             } catch (e) {
                 // Range 无效，跳过
@@ -3445,6 +3962,10 @@
         }
         if (CONFIG.coordinates.showXAxis && tickBarX) {
             tickBarX.appendChild(fragmentX);
+            }
+            
+            // 更新状态
+            state.currentMarkerIds = newMarkerIds;
         }
     }
     
@@ -3476,6 +3997,37 @@
     let hiddenCheckTimer = null;
     // 防抖切换定时器，避免快速切换时闪烁
     let goDebounceTimer = null;
+
+    // 检查当前结果的隐藏状态（独立函数，便于复用）
+    function checkCurrentResultHiddenState() {
+        if (!state.ranges.length || state.idx < 0 || state.idx >= state.ranges.length) {
+            return;
+        }
+        
+        const currentRange = state.ranges[state.idx];
+        if (!currentRange || !isRangeValid(currentRange.range)) {
+            return;
+        }
+        
+        let isHidden = false;
+        try {
+            const rangeNode = currentRange.range.startContainer;
+            const element = rangeNode.nodeType === Node.TEXT_NODE ? rangeNode.parentElement : rangeNode;
+            isHidden = element ? !isVisible(element, false) : false;
+        } catch (e) {
+            isHidden = false;
+        }
+
+        if (isHidden) {
+            toast.textContent = t('hiddenAlert');
+            toast.classList.add('visible');
+            input.classList.add('warn-hidden');
+        } else {
+            // 如果不是隐藏的，确保移除警告样式（可能之前是隐藏的）
+            input.classList.remove('warn-hidden');
+            toast.classList.remove('visible');
+        }
+    }
 
     function go(dir) {
         if (!state.ranges.length) return;
@@ -3526,23 +4078,40 @@
         });
 
         // 延迟检查隐藏状态（不影响切换流畅性）
-        hiddenCheckTimer = setTimeout(() => {
-        let isHidden = false;
-        try {
-            const rangeNode = currentRange.range.startContainer;
-            const element = rangeNode.nodeType === Node.TEXT_NODE ? rangeNode.parentElement : rangeNode;
-            isHidden = element ? !isVisible(element) : false;
-            } catch (e) {
-                isHidden = false;
-            }
+        // 注意：使用闭包保存 currentRange 引用，确保检查时使用的是正确的 Range
+        const rangeToCheck = currentRange;
+        // 使用双重 RAF + 延迟，确保高亮更新完成后再检查
+        requestAnimationFrame(() => {
+            requestAnimationFrame(() => {
+                hiddenCheckTimer = setTimeout(() => {
+                    // 再次获取当前 Range，确保使用的是最新的（可能已经被切换）
+                    const currentRangeForCheck = state.ranges[state.idx];
+                    // 如果 Range 已经变化，使用新的 Range；否则使用保存的 Range
+                    const rangeToUse = currentRangeForCheck && currentRangeForCheck === rangeToCheck ? currentRangeForCheck : rangeToCheck;
+                    
+                    if (!rangeToUse || !isRangeValid(rangeToUse.range)) {
+                        hiddenCheckTimer = null;
+                        return;
+                    }
+                    
+                    let isHidden = false;
+                    try {
+                        const rangeNode = rangeToUse.range.startContainer;
+                        const element = rangeNode.nodeType === Node.TEXT_NODE ? rangeNode.parentElement : rangeNode;
+                        isHidden = element ? !isVisible(element, false) : false;
+                    } catch (e) {
+                        isHidden = false;
+                    }
 
-            if (isHidden) {
-                toast.textContent = t('hiddenAlert');
-                toast.classList.add('visible');
-                input.classList.add('warn-hidden');
-            }
-            hiddenCheckTimer = null;
-        }, 100); // 延迟100ms检查隐藏状态，不影响切换
+                    if (isHidden) {
+                        toast.textContent = t('hiddenAlert');
+                        toast.classList.add('visible');
+                        input.classList.add('warn-hidden');
+                    }
+                    hiddenCheckTimer = null;
+                }, 50); // 双重RAF后延迟50ms检查，确保高亮更新完成
+            });
+        });
 
         // 注意：切换时不要立即启动刷新监听器，避免触发刷新导致闪烁
         // 只在用户停止切换一段时间后才启动监听器
