@@ -9,7 +9,9 @@
 
             const tagName = el.tagName ? el.tagName.toLowerCase() : '';
             const role = el.getAttribute('role') || '';
-            const className = el.className || '';
+            // 使用 getAttribute('class') 兼容 HTML 和 SVG 元素
+            // HTML 元素：className 是字符串；SVG 元素：className 是 SVGAnimatedString 对象
+            const className = el.getAttribute('class') || '';
             const id = el.id || '';
             const ariaExpanded = el.getAttribute('aria-expanded');
             const dataToggle = el.getAttribute('data-toggle') || el.getAttribute('data-bs-toggle');
@@ -60,7 +62,8 @@
             while (parent && parent !== document.body && depth < 10) {
                 const parentTagName = parent.tagName ? parent.tagName.toLowerCase() : '';
                 const parentRole = parent.getAttribute('role') || '';
-                const parentClassName = parent.className || '';
+                // 使用 getAttribute('class') 兼容 HTML 和 SVG 元素
+                const parentClassName = parent.getAttribute('class') || '';
                 const parentId = parent.id || '';
                 
                 // 检查父元素是否是菜单容器

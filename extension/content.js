@@ -116,7 +116,8 @@
         if (!el) return false;
         const style = window.getComputedStyle(el);
         const tagName = el.tagName ? el.tagName.toLowerCase() : '';
-        const className = el.className || '';
+        // 使用 getAttribute('class') 兼容 HTML 和 SVG 元素
+        const className = el.getAttribute('class') || '';
         if (tagName === 'menu' || tagName === 'nav' || className.toLowerCase().includes('menu') || className.toLowerCase().includes('dropdown')) {
             if (style.display === 'none' || style.visibility === 'hidden') return true;
         }
@@ -1983,7 +1984,8 @@
                 // 输入框类型：使用节点、匹配位置、颜色生成ID
                 const node = rangeData.node;
                 const nodeId = node.id || '';
-                const nodeClass = node.className || '';
+                // 使用 getAttribute('class') 兼容 HTML 和 SVG 元素
+                const nodeClass = node.getAttribute('class') || '';
                 const nodeTag = node.tagName || '';
                 const matchStart = rangeData.matchStart || 0;
                 const matchEnd = rangeData.matchEnd || 0;
@@ -2417,7 +2419,8 @@
                         while (checkParent && checkParent !== document.body && parentDepth < 10) {
                             const parentTagName = checkParent.tagName ? checkParent.tagName.toLowerCase() : '';
                             const parentRole = checkParent.getAttribute('role') || '';
-                            const parentClassName = checkParent.className || '';
+                            // 使用 getAttribute('class') 兼容 HTML 和 SVG 元素
+                            const parentClassName = checkParent.getAttribute('class') || '';
                             const parentId = checkParent.id || '';
                             
                             // 检查父元素是否是菜单容器
@@ -2766,7 +2769,8 @@
                         while (checkParent && checkParent !== document.body && parentDepth < 10) {
                             const parentTagName = checkParent.tagName ? checkParent.tagName.toLowerCase() : '';
                             const parentRole = checkParent.getAttribute('role') || '';
-                            const parentClassName = checkParent.className || '';
+                            // 使用 getAttribute('class') 兼容 HTML 和 SVG 元素
+                            const parentClassName = checkParent.getAttribute('class') || '';
                             const parentId = checkParent.id || '';
                             
                             if (parentTagName === 'menu' || parentTagName === 'nav' || parentTagName === 'header' ||
