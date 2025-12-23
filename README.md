@@ -9,7 +9,7 @@
 **A powerful in-page search extension with multi-term highlighting, fuzzy search, regex, and more**
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Chrome Web Store](https://img.shields.io/badge/Chrome-Web%20Store-blue)](https://chrome.google.com/webstore)
+[![Chrome Web Store](https://img.shields.io/badge/Chrome-Web%20Store-blue)](https://chromewebstore.google.com/detail/ijbmfkenkmdfddenkkgjjbjheilghdce?utm_source=item-share-cb)
 
 </div>
 
@@ -94,7 +94,7 @@
 
 ### Chrome Web Store（推荐 / Recommended）
 
-*即将上架... / Coming soon...*
+[**立即安装 / Install Now**](https://chromewebstore.google.com/detail/ijbmfkenkmdfddenkkgjjbjheilghdce?utm_source=item-share-cb)
 
 ### 手动安装（开发版） / Manual Installation (Development)
 
@@ -314,7 +314,7 @@ Welcome to submit Issues for bugs or feature requests!
 如果这个扩展帮到了您 / If this extension helped you:
 
 - ⭐ [给项目加星 / Star the Project](https://github.com/rayrayray555/Super-Find-Bar-Chrome-Extension)
-- 📝 在 Chrome Web Store 留下评价（即将上架）/ Rate on Chrome Web Store (coming soon)
+- 📝 [在 Chrome Web Store 留下评价 / Rate on Chrome Web Store](https://chromewebstore.google.com/detail/ijbmfkenkmdfddenkkgjjbjheilghdce?utm_source=item-share-cb)
 - 🐛 [报告问题 / Report Issues](https://github.com/rayrayray555/Super-Find-Bar-Chrome-Extension/issues)
 
 ---
@@ -331,7 +331,7 @@ MIT License - 详见 / See [LICENSE](LICENSE)
 
 - [GitHub 仓库 / Repository](https://github.com/rayrayray555/Super-Find-Bar-Chrome-Extension)
 - [更新日志 / Changelog](CHANGELOG.md)
-- [Chrome Web Store](https://chrome.google.com/webstore)（即将上架 / Coming soon）
+- [Chrome Web Store](https://chromewebstore.google.com/detail/ijbmfkenkmdfddenkkgjjbjheilghdce?utm_source=item-share-cb)
 
 ---
 
